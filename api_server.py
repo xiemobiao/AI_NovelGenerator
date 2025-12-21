@@ -19,8 +19,25 @@ import os
 from logger_config import setup_logger, get_logger
 from export_manager import export_novel
 
+# 导入数据库和路由
+from database import init_db
+from auth_routes import router as auth_router
+from version_routes import router as version_router
+from websocket_routes import router as websocket_router
+
+# 导入Prometheus监控
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import make_asgi_app
+import prometheus_metrics
+
+# 导入Sentry错误追踪
+from sentry_config import init_sentry
+
 # 设置日志
 logger = setup_logger("NovelAPI", log_dir="./logs")
+
+# 初始化Sentry
+init_sentry()
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -39,6 +56,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 注册路由
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(version_router, prefix="/api/v1")
+app.include_router(websocket_router)
+
+# 配置Prometheus监控
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=True)
+
+# 挂载Prometheus metrics端点（备用）
+metrics_app = make_asgi_app()
+app.mount("/prometheus", metrics_app)
+
+# 应用启动事件
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时初始化数据库和监控"""
+    logger.info("正在初始化数据库...")
+    init_db()
+    logger.info("数据库初始化完成")
+
+    # 启动系统指标收集
+    import asyncio
+    async def collect_metrics_periodically():
+        while True:
+            prometheus_metrics.collect_system_metrics()
+            await asyncio.sleep(15)  # 每15秒收集一次
+
+    asyncio.create_task(collect_metrics_periodically())
+    logger.info("Prometheus监控已启动")
 
 # 存储任务状态
 tasks_status: Dict[str, Dict[str, Any]] = {}

@@ -11,3 +11,33 @@ config.json
 config_test.json
 /novel_generator/__pycache__
 /ui/__pycache__
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+novel_generator.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Data files
+data/
+uploads/
+novels/
+logs/
+
+# Node modules (for web frontend)
+node_modules/
+web-frontend/node_modules/
+web-frontend/dist/
+web-frontend/.vite/
+
+# Docker
+*.pid
+
+# OS
+.DS_Store
+Thumbs.db
