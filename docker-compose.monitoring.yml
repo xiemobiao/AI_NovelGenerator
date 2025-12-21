@@ -1,0 +1,81 @@
+# docker-compose.monitoring.yml
+# 监控栈配置 - Prometheus + Grafana
+
+version: '3.8'
+
+services:
+  # Prometheus - 指标收集
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: novel-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Grafana - 可视化仪表盘
+  grafana:
+    image: grafana/grafana:latest
+    container_name: novel-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+    networks:
+      - novel-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # Node Exporter - 系统指标
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: novel-node-exporter
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - '/:/host:ro,rslave'
+    ports:
+      - "9100:9100"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # cAdvisor - 容器指标
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: novel-cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+networks:
+  novel-network:
+    external: true
+
+volumes:
+  prometheus_data:
+  grafana_data:

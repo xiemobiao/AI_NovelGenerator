@@ -1,0 +1,40 @@
+# monitoring/prometheus.yml
+# Prometheus配置文件
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'novel-generator-monitor'
+
+# 告警规则
+rule_files:
+  - 'alert_rules.yml'
+
+# 抓取配置
+scrape_configs:
+  # Prometheus自身
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 后端API
+  - job_name: 'backend'
+    static_configs:
+      - targets: ['backend:8000']
+    metrics_path: '/metrics'
+
+  # Node Exporter - 系统指标
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # cAdvisor - 容器指标
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # PostgreSQL
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['database:5432']
