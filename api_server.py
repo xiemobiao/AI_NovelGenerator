@@ -5,7 +5,7 @@ FastAPI服务器
 提供RESTful API接口用于小说生成
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, status
+from fastapi import FastAPI, HTTPException, BackgroundTasks, status, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -175,6 +175,20 @@ class TaskStatus(BaseModel):
     error: Optional[str] = None
 
 
+class AppConfig(BaseModel):
+    """应用配置"""
+    llm: LLMConfig
+    embedding: EmbeddingConfig
+    other_params: Optional[Dict[str, Any]] = Field(default_factory=dict, description="其他参数")
+
+
+class ConfigUpdateRequest(BaseModel):
+    """配置更新请求"""
+    llm: Optional[LLMConfig] = None
+    embedding: Optional[EmbeddingConfig] = None
+    other_params: Optional[Dict[str, Any]] = None
+
+
 # ==================== 辅助函数 ====================
 
 def load_project_config(filepath: str) -> Dict[str, Any]:
@@ -221,6 +235,78 @@ def load_project_config(filepath: str) -> Dict[str, Any]:
             logger.warning(f"加载项目配置失败: {e}")
 
     return config
+
+
+# 全局配置文件路径
+GLOBAL_CONFIG_FILE = Path("./config.json")
+
+
+def load_global_config() -> Dict[str, Any]:
+    """
+    加载全局配置文件
+
+    Returns:
+        配置字典，包含llm、embedding和other_params
+    """
+    import json
+
+    default_config = {
+        "llm": {
+            "interface_format": os.getenv("LLM_INTERFACE_FORMAT", "openai"),
+            "api_key": os.getenv("LLM_API_KEY", ""),
+            "base_url": os.getenv("LLM_BASE_URL", ""),
+            "model_name": os.getenv("LLM_MODEL_NAME", "gpt-4o-mini"),
+            "temperature": float(os.getenv("LLM_TEMPERATURE", "0.7")),
+            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "4096")),
+            "timeout": int(os.getenv("LLM_TIMEOUT", "600"))
+        },
+        "embedding": {
+            "interface_format": os.getenv("EMBEDDING_INTERFACE_FORMAT", "openai"),
+            "api_key": os.getenv("EMBEDDING_API_KEY", ""),
+            "base_url": os.getenv("EMBEDDING_BASE_URL", ""),
+            "model_name": os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small"),
+            "retrieval_k": int(os.getenv("EMBEDDING_RETRIEVAL_K", "4"))
+        },
+        "other_params": {}
+    }
+
+    if GLOBAL_CONFIG_FILE.exists():
+        try:
+            with open(GLOBAL_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                file_config = json.load(f)
+                # 合并配置
+                if "llm" in file_config:
+                    default_config["llm"].update(file_config["llm"])
+                if "embedding" in file_config:
+                    default_config["embedding"].update(file_config["embedding"])
+                if "other_params" in file_config:
+                    default_config["other_params"] = file_config["other_params"]
+        except Exception as e:
+            logger.warning(f"加载全局配置失败: {e}")
+
+    return default_config
+
+
+def save_global_config(config: Dict[str, Any]) -> bool:
+    """
+    保存全局配置到文件
+
+    Args:
+        config: 配置字典
+
+    Returns:
+        是否成功
+    """
+    import json
+
+    try:
+        with open(GLOBAL_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        logger.info(f"配置已保存到 {GLOBAL_CONFIG_FILE}")
+        return True
+    except Exception as e:
+        logger.error(f"保存配置失败: {e}", exc_info=True)
+        return False
 
 
 def parse_blueprint_file(filepath: str) -> List[Dict]:
@@ -1082,6 +1168,362 @@ async def list_projects(base_dir: str = "."):
 
     except Exception as e:
         logger.error(f"列出项目失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/v1/config", tags=["配置"], response_model=AppConfig)
+async def get_config():
+    """
+    获取全局配置
+
+    返回当前的LLM、Embedding和其他参数配置
+    """
+    try:
+        config = load_global_config()
+        return AppConfig(**config)
+    except Exception as e:
+        logger.error(f"获取配置失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.put("/api/v1/config", tags=["配置"])
+async def update_config(request: ConfigUpdateRequest):
+    """
+    更新全局配置
+
+    Args:
+        request: 配置更新请求（可以只更新部分配置）
+    """
+    try:
+        # 加载现有配置
+        current_config = load_global_config()
+
+        # 更新配置
+        if request.llm:
+            current_config["llm"].update(request.llm.model_dump(exclude_none=True))
+
+        if request.embedding:
+            current_config["embedding"].update(request.embedding.model_dump(exclude_none=True))
+
+        if request.other_params:
+            current_config["other_params"].update(request.other_params)
+
+        # 保存配置
+        if save_global_config(current_config):
+            return {
+                "message": "配置更新成功",
+                "config": current_config
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="保存配置失败"
+            )
+
+    except Exception as e:
+        logger.error(f"更新配置失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.post("/api/v1/config/test-llm", tags=["配置"])
+async def test_llm_config(llm_config: LLMConfig):
+    """
+    测试LLM配置是否可用
+
+    Args:
+        llm_config: LLM配置参数
+
+    Returns:
+        测试结果
+    """
+    try:
+        from llm_adapters import create_llm_adapter
+
+        logger.info("开始测试LLM配置...")
+
+        # 创建LLM适配器
+        llm_adapter = create_llm_adapter(
+            interface_format=llm_config.interface_format,
+            base_url=llm_config.base_url or "",
+            model_name=llm_config.model_name,
+            api_key=llm_config.api_key,
+            temperature=llm_config.temperature,
+            max_tokens=llm_config.max_tokens,
+            timeout=llm_config.timeout
+        )
+
+        # 发送测试请求
+        test_prompt = "Please reply 'OK' to confirm the connection."
+        response = await asyncio.to_thread(llm_adapter.invoke, test_prompt)
+
+        if response and len(response.strip()) > 0:
+            logger.info(f"LLM配置测试成功，响应: {response[:100]}")
+            return {
+                "success": True,
+                "message": "LLM配置测试成功",
+                "response": response[:200]  # 返回前200字符
+            }
+        else:
+            return {
+                "success": False,
+                "message": "LLM返回空响应"
+            }
+
+    except Exception as e:
+        logger.error(f"LLM配置测试失败: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": f"测试失败: {str(e)}"
+        }
+
+
+@app.post("/api/v1/config/test-embedding", tags=["配置"])
+async def test_embedding_config(embedding_config: EmbeddingConfig):
+    """
+    测试Embedding配置是否可用
+
+    Args:
+        embedding_config: Embedding配置参数
+
+    Returns:
+        测试结果
+    """
+    try:
+        from embedding_adapters import create_embedding_adapter
+
+        logger.info("开始测试Embedding配置...")
+
+        # 创建Embedding适配器
+        embedding_adapter = create_embedding_adapter(
+            interface_format=embedding_config.interface_format,
+            api_key=embedding_config.api_key or "",
+            base_url=embedding_config.base_url or "",
+            model_name=embedding_config.model_name
+        )
+
+        # 发送测试请求
+        test_text = "这是一个测试文本"
+        embeddings = await asyncio.to_thread(embedding_adapter.embed_query, test_text)
+
+        if embeddings and len(embeddings) > 0:
+            logger.info(f"Embedding配置测试成功，向量维度: {len(embeddings)}")
+            return {
+                "success": True,
+                "message": "Embedding配置测试成功",
+                "dimension": len(embeddings)
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Embedding返回空向量"
+            }
+
+    except Exception as e:
+        logger.error(f"Embedding配置测试失败: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": f"测试失败: {str(e)}"
+        }
+
+
+@app.post("/api/v1/knowledge/import", tags=["知识库"])
+async def import_knowledge(
+    filepath: str = Form(..., description="项目路径"),
+    file: UploadFile = File(..., description="知识文件")
+):
+    """
+    导入知识文件到向量库
+
+    Args:
+        filepath: 项目路径
+        file: 上传的知识文件（支持txt、md等文本文件）
+
+    Returns:
+        导入结果
+    """
+    try:
+        from novel_generator import import_knowledge_file
+        import tempfile
+
+        # 加载配置
+        config = load_project_config(filepath)
+
+        # 保存上传的文件到临时位置
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.txt') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+
+        logger.info(f"开始导入知识文件到项目: {filepath}")
+
+        # 异步执行导入
+        await asyncio.to_thread(
+            import_knowledge_file,
+            embedding_api_key=config["embedding"]["api_key"],
+            embedding_url=config["embedding"]["base_url"],
+            embedding_interface_format=config["embedding"]["interface_format"],
+            embedding_model_name=config["embedding"]["model_name"],
+            file_path=tmp_file_path,
+            filepath=filepath
+        )
+
+        # 删除临时文件
+        os.unlink(tmp_file_path)
+
+        return {
+            "success": True,
+            "message": "知识文件导入成功"
+        }
+
+    except Exception as e:
+        logger.error(f"导入知识文件失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"导入失败: {str(e)}"
+        )
+
+
+@app.post("/api/v1/knowledge/clear", tags=["知识库"])
+async def clear_knowledge(filepath: str):
+    """
+    清空项目的向量库
+
+    Args:
+        filepath: 项目路径
+
+    Returns:
+        清空结果
+    """
+    try:
+        from novel_generator import clear_vector_store
+
+        project_dir = Path(filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目目录不存在: {filepath}"
+            )
+
+        logger.info(f"清空项目向量库: {filepath}")
+
+        # 异步执行清空操作
+        success = await asyncio.to_thread(clear_vector_store, filepath)
+
+        if success:
+            return {
+                "success": True,
+                "message": "向量库已清空"
+            }
+        else:
+            return {
+                "success": False,
+                "message": "向量库不存在或已清空"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"清空向量库失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.post("/api/v1/visualizations/generate", tags=["可视化"])
+async def generate_visualizations(
+    filepath: str,
+    type: str = "all"  # all, timeline, relationship, heatmap
+):
+    """
+    生成可视化图表
+
+    Args:
+        filepath: 项目路径
+        type: 可视化类型（all/timeline/relationship/heatmap）
+
+    Returns:
+        生成的文件列表
+    """
+    try:
+        from visualizations import generate_all_visualizations
+
+        project_dir = Path(filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目目录不存在: {filepath}"
+            )
+
+        logger.info(f"开始生成可视化图表: {type}")
+
+        # 异步生成可视化
+        results = await asyncio.to_thread(
+            generate_all_visualizations,
+            filepath=filepath
+        )
+
+        return {
+            "success": True,
+            "message": "可视化图表生成成功",
+            "files": results
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"生成可视化失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"生成失败: {str(e)}"
+        )
+
+
+@app.get("/api/v1/visualizations/image", tags=["可视化"])
+async def get_visualization_image(filepath: str, filename: str):
+    """
+    获取可视化图片
+
+    Args:
+        filepath: 项目路径
+        filename: 图片文件名
+
+    Returns:
+        图片文件
+    """
+    try:
+        from fastapi.responses import FileResponse
+
+        project_dir = Path(filepath)
+        vis_dir = project_dir / "visualizations"
+        image_file = vis_dir / filename
+
+        if not image_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"图片文件不存在: {filename}"
+            )
+
+        # 返回图片文件
+        return FileResponse(
+            path=str(image_file),
+            media_type="image/png",
+            filename=filename
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取图片失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
