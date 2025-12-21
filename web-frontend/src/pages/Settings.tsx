@@ -16,7 +16,7 @@ import { useAppStore } from '@/store/useAppStore';
 import apiClient from '@/services/api';
 
 const Settings: React.FC = () => {
-  const { config, setConfig } = useAppStore();
+  const { setConfig } = useAppStore();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -68,17 +68,6 @@ const Settings: React.FC = () => {
       setTesting(false);
     }
   };
-
-  const llmTab = (
-    <Form.Item label="接口类型" name={['llm', 'interface_format']}>
-      <Select>
-        <Select.Option value="OpenAI">OpenAI</Select.Option>
-        <Select.Option value="Gemini">Google Gemini</Select.Option>
-        <Select.Option value="Azure">Azure OpenAI</Select.Option>
-        <Select.Option value="Claude">Anthropic Claude</Select.Option>
-      </Select>
-    </Form.Item>
-  );
 
   return (
     <Card title="设置">

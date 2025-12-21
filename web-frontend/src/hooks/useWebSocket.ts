@@ -12,7 +12,7 @@ export interface WebSocketMessage {
 
 export const useWebSocket = (url?: string) => {
   const ws = useRef<WebSocket | null>(null);
-  const reconnectTimeout = useRef<NodeJS.Timeout>();
+  const reconnectTimeout = useRef<ReturnType<typeof setTimeout>>();
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
 

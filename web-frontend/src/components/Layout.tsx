@@ -34,7 +34,7 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const screens = useBreakpoint();
 
-  const { sidebarCollapsed, setSidebarCollapsed, tasks, notifications, isDarkMode, toggleTheme, currentUser, logout } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed, tasks, isDarkMode, toggleTheme, currentUser, logout } = useAppStore();
   const [mobileMenuVisible, setMobileMenuVisible] = useState(false);
   const [hotkeyHelpVisible, setHotkeyHelpVisible] = useState(false);
 
