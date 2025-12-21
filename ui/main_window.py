@@ -138,6 +138,10 @@ class NovelGeneratorGUI:
         build_character_tab(self)
         build_summary_tab(self)
         build_chapters_tab(self)
+        # 导出标签页
+        self.build_export_tab()
+        # 长篇小说管理标签页
+        self.build_longnovel_tab()
 
     # ----------------- 通用辅助函数 -----------------
     def show_tooltip(self, key: str):
@@ -345,6 +349,32 @@ class NovelGeneratorGUI:
     finalize_chapter_ui = finalize_chapter_ui
     do_consistency_check = do_consistency_check
     import_knowledge_handler = import_knowledge_handler
+    def build_export_tab(self):
+        """构建导出标签页"""
+        from ui.export_tab import ExportTab
+
+        # 创建Export标签页
+        self.tabview.add("Export")
+        export_frame = self.tabview.tab("Export")
+
+        # 初始化导出标签页
+        self.export_tab = ExportTab(export_frame, self.log)
+
+    def build_longnovel_tab(self):
+        """构建长篇小说管理标签页"""
+        from ui.longnovel_tab import LongNovelTab
+
+        # 创建LongNovel标签页
+        self.tabview.add("LongNovel")
+        longnovel_frame = self.tabview.tab("LongNovel")
+
+        # 初始化长篇小说管理标签页，传递必要的参数
+        self.longnovel_tab = LongNovelTab(
+            longnovel_frame,
+            self.log,
+            self.filepath_var
+        )
+
     clear_vectorstore_handler = clear_vectorstore_handler
     show_plot_arcs_ui = show_plot_arcs_ui
     load_config_btn = load_config_btn

@@ -144,6 +144,42 @@ def generate_chapter_draft_ui(self):
             embedding_model_name = self.embedding_model_name_var.get().strip()
             embedding_k = self.safe_get_int(self.embedding_retrieval_k_var, 4)
 
+            # 检查是否存在长篇小说增强系统
+            context_manager = None
+            plot_tracker = None
+            additional_context = ""
+
+            try:
+                from pathlib import Path
+                context_file = Path(filepath) / "context_manager.json"
+                plot_file = Path(filepath) / "plotlines.json"
+
+                if context_file.exists() or plot_file.exists():
+                    self.safe_log(f"📚 检测到长篇小说增强系统，加载上下文...")
+
+                    if context_file.exists():
+                        from context_manager import create_context_manager
+                        context_manager = create_context_manager(filepath)
+                        chapter_context = context_manager.build_context_for_chapter(chap_num)
+                        if chapter_context:
+                            additional_context += "\n\n=== 章节上下文 ===\n" + chapter_context
+                            self.safe_log(f"✓ 已加载章节上下文")
+
+                    if plot_file.exists():
+                        from plot_tracker import create_plot_tracker
+                        plot_tracker = create_plot_tracker(filepath)
+                        plot_context = plot_tracker.build_plot_context(chap_num)
+                        if plot_context:
+                            additional_context += "\n\n=== 情节线索 ===\n" + plot_context
+                            self.safe_log(f"✓ 已加载情节线索")
+
+                        # 检查未解决的情节
+                        unresolved = plot_tracker.get_unresolved_plots(chap_num)
+                        if unresolved:
+                            self.safe_log(f"⚠️ 发现 {len(unresolved)} 个超期未解决的情节线")
+            except Exception as e:
+                self.safe_log(f"⚠️ 加载长篇小说系统时出错: {e}")
+
             self.safe_log(f"生成第{chap_num}章草稿：准备生成请求提示词...")
 
             # 调用新添加的 build_chapter_prompt 函数构造初始提示词
@@ -186,8 +222,13 @@ def generate_chapter_draft_ui(self):
                 wordcount_label = ctk.CTkLabel(dialog, text="字数：0", font=("Microsoft YaHei", 12))
                 wordcount_label.pack(side="left", padx=(10,0), pady=5)
                 
-                # 插入角色内容
+                # 插入角色内容和长篇小说上下文
                 final_prompt = prompt_text
+
+                # 添加长篇小说上下文（如果有）
+                if additional_context:
+                    final_prompt += additional_context
+
                 role_names = [name.strip() for name in self.char_inv_text.get("0.0", "end").strip().split(',') if name.strip()]
                 role_lib_path = os.path.join(filepath, "角色库")
                 role_contents = []
@@ -291,6 +332,26 @@ def generate_chapter_draft_ui(self):
             if draft_text:
                 self.safe_log(f"✅ 第{chap_num}章草稿生成完成。请在左侧查看或编辑。")
                 self.master.after(0, lambda: self.show_chapter_in_textbox(draft_text))
+
+                # 如果使用了长篇小说系统，记录章节信息
+                try:
+                    if context_manager:
+                        # 提取章节摘要（取前200字）
+                        chapter_summary = draft_text[:200] + "..." if len(draft_text) > 200 else draft_text
+                        context_manager.add_chapter_summary(chap_num, chapter_summary)
+                        self.safe_log(f"✓ 已记录章节 {chap_num} 到上下文管理器")
+
+                    if plot_tracker:
+                        # 获取活跃的情节线并记录发展
+                        active_plots = plot_tracker.get_active_plots(chap_num)
+                        for plot in active_plots:
+                            plot_id = plot["plot_id"]
+                            development = f"第{chap_num}章推进了该情节线"
+                            plot_tracker.record_chapter_plot(plot_id, chap_num, development)
+                        if active_plots:
+                            self.safe_log(f"✓ 已记录 {len(active_plots)} 个情节线的发展")
+                except Exception as e:
+                    self.safe_log(f"⚠️ 记录章节到长篇系统时出错: {e}")
             else:
                 self.safe_log("⚠️ 本章草稿生成失败或无内容。")
         except Exception:
@@ -375,6 +436,31 @@ def finalize_chapter_ui(self):
             )
             self.safe_log(f"✅ 第{chap_num}章定稿完成（已更新前文摘要、角色状态、向量库）。")
 
+            # 如果使用了长篇小说系统，更新最终版本
+            try:
+                from pathlib import Path
+                context_file = Path(filepath) / "context_manager.json"
+                plot_file = Path(filepath) / "plotlines.json"
+
+                if context_file.exists():
+                    from context_manager import create_context_manager
+                    context_manager = create_context_manager(filepath)
+                    # 更新章节摘要为最终版本
+                    final_summary = edited_text[:300] + "..." if len(edited_text) > 300 else edited_text
+                    context_manager.add_chapter_summary(chap_num, final_summary)
+                    self.safe_log(f"✓ 已更新最终版本到上下文管理器")
+
+                if plot_file.exists():
+                    from plot_tracker import create_plot_tracker
+                    plot_tracker = create_plot_tracker(filepath)
+                    # 检查是否需要标记情节完结
+                    active_plots = plot_tracker.get_active_plots(chap_num)
+                    for plot in active_plots:
+                        if plot.get("expected_end_chapter") == chap_num:
+                            self.safe_log(f"ℹ️ 情节 '{plot['title']}' 预计在本章完结")
+            except Exception as e:
+                self.safe_log(f"⚠️ 更新长篇系统时出错: {e}")
+
             final_text = read_file(chapter_file)
             self.master.after(0, lambda: self.show_chapter_in_textbox(final_text))
         except Exception:
@@ -425,6 +511,62 @@ def do_consistency_check(self):
             )
             self.safe_log("审校结果：")
             self.safe_log(result)
+
+            # 如果使用了长篇小说系统，生成额外的质量报告
+            try:
+                from pathlib import Path
+                context_file = Path(filepath) / "context_manager.json"
+                plot_file = Path(filepath) / "plotlines.json"
+
+                if context_file.exists():
+                    from context_manager import create_context_manager
+                    context_manager = create_context_manager(filepath)
+                    consistency_report = context_manager.generate_consistency_report()
+
+                    self.safe_log("\n" + "="*50)
+                    self.safe_log("【长篇小说一致性报告】")
+                    self.safe_log(f"总角色数: {consistency_report.get('total_characters', 0)}")
+                    self.safe_log(f"总地点数: {consistency_report.get('total_locations', 0)}")
+                    self.safe_log(f"总物品数: {consistency_report.get('total_items', 0)}")
+
+                    char_issues = consistency_report.get('character_issues', [])
+                    if char_issues:
+                        self.safe_log(f"\n⚠️ 发现 {len(char_issues)} 个角色一致性问题:")
+                        for issue in char_issues[:5]:  # 只显示前5个
+                            self.safe_log(f"  - {issue}")
+
+                    loc_issues = consistency_report.get('location_issues', [])
+                    if loc_issues:
+                        self.safe_log(f"\n⚠️ 发现 {len(loc_issues)} 个地点一致性问题:")
+                        for issue in loc_issues[:5]:
+                            self.safe_log(f"  - {issue}")
+
+                if plot_file.exists():
+                    from plot_tracker import create_plot_tracker
+                    plot_tracker = create_plot_tracker(filepath)
+                    plot_report = plot_tracker.generate_plot_report()
+
+                    self.safe_log("\n" + "="*50)
+                    self.safe_log("【情节线索质量报告】")
+                    self.safe_log(f"总情节线数: {plot_report.get('total_plotlines', 0)}")
+
+                    status_summary = plot_report.get('status_summary', {})
+                    self.safe_log(f"活跃情节: {status_summary.get('active', 0)}")
+                    self.safe_log(f"已完结: {status_summary.get('resolved', 0)}")
+                    self.safe_log(f"已计划: {status_summary.get('planned', 0)}")
+                    self.safe_log(f"未解决伏笔: {plot_report.get('unresolved_foreshadowing', 0)}")
+                    self.safe_log(f"活跃冲突: {plot_report.get('active_conflicts', 0)}")
+
+                    # 检查超期未解决的情节
+                    unresolved = plot_tracker.get_unresolved_plots(chap_num)
+                    if unresolved:
+                        self.safe_log(f"\n⚠️ {len(unresolved)} 个情节线超期未解决:")
+                        for u in unresolved[:5]:
+                            self.safe_log(f"  - {u['title']}: 预期第{u['expected_end']}章完结，已超期{u['overdue_chapters']}章")
+
+                    self.safe_log("="*50)
+            except Exception as e:
+                self.safe_log(f"⚠️ 生成长篇质量报告时出错: {e}")
         except Exception:
             self.handle_exception("审校时出错")
         finally:
