@@ -1,0 +1,83 @@
+# docker-compose.yml
+# AI Novel Generator - Docker Compose配置
+
+version: '3.8'
+
+services:
+  # PostgreSQL数据库
+  database:
+    image: postgres:15-alpine
+    container_name: novel-generator-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-novelgen}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_password}
+      POSTGRES_DB: ${DB_NAME:-novel_generator}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-novelgen}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # 后端API服务
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: novel-generator-backend
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-novelgen}:${DB_PASSWORD:-change_this_password}@database:5432/${DB_NAME:-novel_generator}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this-in-production}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # 前端Web服务
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: novel-generator-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+# 网络配置
+networks:
+  novel-network:
+    driver: bridge
+
+# 数据卷
+volumes:
+  postgres_data:
+    driver: local
