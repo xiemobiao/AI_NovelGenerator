@@ -1,0 +1,352 @@
+# docker-compose.ha.yml
+# 高可用配置：数据库主从复制 + Redis Cluster
+# 用于生产环境的高可用部署
+
+version: '3.8'
+
+services:
+  # PostgreSQL主库
+  database-master:
+    image: postgres:15-alpine
+    container_name: novel-generator-db-master
+    environment:
+      POSTGRES_USER: ${DB_USER:-novelgen}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_password}
+      POSTGRES_DB: ${DB_NAME:-novel_generator}
+      # 主库复制配置
+      POSTGRES_REPLICATION_MODE: master
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${DB_REPLICATION_PASSWORD:-replication_password}
+    volumes:
+      - postgres_master_data:/var/lib/postgresql/data
+      - ./postgresql/master/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./postgresql/master/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    ports:
+      - "5432:5432"
+    command: >
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+      -c hot_standby=on
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-novelgen}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # PostgreSQL从库1
+  database-replica-1:
+    image: postgres:15-alpine
+    container_name: novel-generator-db-replica-1
+    environment:
+      POSTGRES_USER: ${DB_USER:-novelgen}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_password}
+      POSTGRES_DB: ${DB_NAME:-novel_generator}
+      # 从库复制配置
+      POSTGRES_REPLICATION_MODE: slave
+      POSTGRES_MASTER_HOST: database-master
+      POSTGRES_MASTER_PORT: 5432
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${DB_REPLICATION_PASSWORD:-replication_password}
+    volumes:
+      - postgres_replica_1_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    depends_on:
+      database-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-novelgen}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # PostgreSQL从库2
+  database-replica-2:
+    image: postgres:15-alpine
+    container_name: novel-generator-db-replica-2
+    environment:
+      POSTGRES_USER: ${DB_USER:-novelgen}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_password}
+      POSTGRES_DB: ${DB_NAME:-novel_generator}
+      # 从库复制配置
+      POSTGRES_REPLICATION_MODE: slave
+      POSTGRES_MASTER_HOST: database-master
+      POSTGRES_MASTER_PORT: 5432
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: ${DB_REPLICATION_PASSWORD:-replication_password}
+    volumes:
+      - postgres_replica_2_data:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    depends_on:
+      database-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-novelgen}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Redis Cluster - Node 1
+  redis-node-1:
+    image: redis:7-alpine
+    container_name: novel-generator-redis-node-1
+    command: >
+      redis-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_node_1_data:/data
+    ports:
+      - "6379:6379"
+      - "16379:16379"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Redis Cluster - Node 2
+  redis-node-2:
+    image: redis:7-alpine
+    container_name: novel-generator-redis-node-2
+    command: >
+      redis-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_node_2_data:/data
+    ports:
+      - "6380:6379"
+      - "16380:16379"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Redis Cluster - Node 3
+  redis-node-3:
+    image: redis:7-alpine
+    container_name: novel-generator-redis-node-3
+    command: >
+      redis-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_node_3_data:/data
+    ports:
+      - "6381:6379"
+      - "16381:16379"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Redis Cluster - Node 4
+  redis-node-4:
+    image: redis:7-alpine
+    container_name: novel-generator-redis-node-4
+    command: >
+      redis-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_node_4_data:/data
+    ports:
+      - "6382:6379"
+      - "16382:16379"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Redis Cluster - Node 5
+  redis-node-5:
+    image: redis:7-alpine
+    container_name: novel-generator-redis-node-5
+    command: >
+      redis-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_node_5_data:/data
+    ports:
+      - "6383:6379"
+      - "16383:16379"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Redis Cluster - Node 6
+  redis-node-6:
+    image: redis:7-alpine
+    container_name: novel-generator-redis-node-6
+    command: >
+      redis-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_node_6_data:/data
+    ports:
+      - "6384:6379"
+      - "16384:16379"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Redis Cluster初始化
+  redis-cluster-init:
+    image: redis:7-alpine
+    container_name: novel-generator-redis-cluster-init
+    command: >
+      sh -c "
+      sleep 10 &&
+      redis-cli -a ${REDIS_PASSWORD:-redis_password} --cluster create
+      redis-node-1:6379
+      redis-node-2:6379
+      redis-node-3:6379
+      redis-node-4:6379
+      redis-node-5:6379
+      redis-node-6:6379
+      --cluster-replicas 1
+      --cluster-yes
+      "
+    depends_on:
+      - redis-node-1
+      - redis-node-2
+      - redis-node-3
+      - redis-node-4
+      - redis-node-5
+      - redis-node-6
+    networks:
+      - novel-network
+
+  # HAProxy负载均衡器（读库负载均衡）
+  haproxy:
+    image: haproxy:2.8-alpine
+    container_name: novel-generator-haproxy
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "5435:5432"  # 读库负载均衡端口
+      - "8404:8404"  # HAProxy统计页面
+    depends_on:
+      - database-replica-1
+      - database-replica-2
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # PgBouncer连接池
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: novel-generator-pgbouncer
+    environment:
+      DATABASE_URL: "postgres://${DB_USER:-novelgen}:${DB_PASSWORD:-change_this_password}@database-master:5432/${DB_NAME:-novel_generator}"
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 25
+      MIN_POOL_SIZE: 10
+      RESERVE_POOL_SIZE: 10
+      RESERVE_POOL_TIMEOUT: 5
+    ports:
+      - "6432:5432"
+    depends_on:
+      - database-master
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # RabbitMQ集群 - Node 1
+  rabbitmq-node-1:
+    image: rabbitmq:3.12-management-alpine
+    container_name: novel-generator-rabbitmq-node-1
+    hostname: rabbitmq-node-1
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin_password}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-secret_cookie}
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_node_1_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # RabbitMQ集群 - Node 2
+  rabbitmq-node-2:
+    image: rabbitmq:3.12-management-alpine
+    container_name: novel-generator-rabbitmq-node-2
+    hostname: rabbitmq-node-2
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin_password}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-secret_cookie}
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_node_2_data:/var/lib/rabbitmq
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    depends_on:
+      - rabbitmq-node-1
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+# 网络配置
+networks:
+  novel-network:
+    driver: bridge
+
+# 数据卷
+volumes:
+  postgres_master_data:
+    driver: local
+  postgres_replica_1_data:
+    driver: local
+  postgres_replica_2_data:
+    driver: local
+  redis_node_1_data:
+    driver: local
+  redis_node_2_data:
+    driver: local
+  redis_node_3_data:
+    driver: local
+  redis_node_4_data:
+    driver: local
+  redis_node_5_data:
+    driver: local
+  redis_node_6_data:
+    driver: local
+  rabbitmq_node_1_data:
+    driver: local
+  rabbitmq_node_2_data:
+    driver: local

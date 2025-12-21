@@ -1,0 +1,40 @@
+# Kubernetes ConfigMap
+# 应用配置（非敏感信息）
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: novel-generator-config
+  namespace: novel-generator
+  labels:
+    app: novel-generator
+data:
+  # 应用配置
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+
+  # 数据库配置
+  DB_HOST: "postgresql-service"
+  DB_PORT: "5432"
+  DB_NAME: "novel_generator"
+
+  # Redis配置
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+
+  # RabbitMQ配置
+  RABBITMQ_HOST: "rabbitmq-service"
+  RABBITMQ_PORT: "5672"
+
+  # Celery配置
+  CELERY_WORKER_CONCURRENCY: "4"
+
+  # Prometheus配置
+  SENTRY_ENVIRONMENT: "production"
+  SENTRY_TRACES_SAMPLE_RATE: "0.1"
+  SENTRY_PROFILES_SAMPLE_RATE: "0.1"
+
+  # 读写分离配置
+  READ_WRITE_SPLIT_ENABLED: "true"
+  DATABASE_READ_URL: "postgresql://novelgen:PASSWORD@postgresql-replica-service:5432/novel_generator"

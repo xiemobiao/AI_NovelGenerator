@@ -30,8 +30,14 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import make_asgi_app
 import prometheus_metrics
 
+# 导入Sentry错误追踪
+from sentry_config import init_sentry
+
 # 设置日志
 logger = setup_logger("NovelAPI", log_dir="./logs")
+
+# 初始化Sentry
+init_sentry()
 
 # 创建FastAPI应用
 app = FastAPI(

@@ -1,0 +1,179 @@
+# Backend API Deployment
+# FastAPI应用部署
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: novel-generator
+  labels:
+    app: backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+  selector:
+    app: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: novel-generator
+  labels:
+    app: backend
+spec:
+  replicas: 3  # 3个副本实现高可用
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: backend
+          image: novel-generator-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            # 从ConfigMap获取配置
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: novel-generator-config
+                  key: ENVIRONMENT
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: novel-generator-config
+                  key: LOG_LEVEL
+            - name: READ_WRITE_SPLIT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: novel-generator-config
+                  key: READ_WRITE_SPLIT_ENABLED
+
+            # 从Secrets获取敏感信息
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: novel-generator-secrets
+                  key: SECRET_KEY
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: novel-generator-secrets
+                  key: SENTRY_DSN
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: novel-generator-secrets
+                  key: DB_PASSWORD
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: novel-generator-secrets
+                  key: REDIS_PASSWORD
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: novel-generator-secrets
+                  key: OPENAI_API_KEY
+
+            # 数据库连接
+            - name: DATABASE_URL
+              value: "postgresql://novelgen:$(DB_PASSWORD)@postgresql-service:5432/novel_generator"
+            - name: DATABASE_WRITE_URL
+              value: "postgresql://novelgen:$(DB_PASSWORD)@postgresql-service:5432/novel_generator"
+            - name: DATABASE_READ_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: novel-generator-config
+                  key: DATABASE_READ_URL
+
+            # Redis连接
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: novel-generator-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: novel-generator-config
+                  key: REDIS_PORT
+
+            # RabbitMQ连接
+            - name: CELERY_BROKER_URL
+              value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq-service:5672//"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://:$(REDIS_PASSWORD)@redis-service:6379/2"
+
+            - name: PYTHONUNBUFFERED
+              value: "1"
+
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+      # 优雅停机
+      terminationGracePeriodSeconds: 30
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: novel-generator
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

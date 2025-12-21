@@ -1,0 +1,10 @@
+# Kubernetes Namespace
+# 为AI Novel Generator创建独立的命名空间
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: novel-generator
+  labels:
+    name: novel-generator
+    environment: production
