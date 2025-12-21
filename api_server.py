@@ -163,6 +163,37 @@ class ExportRequest(BaseModel):
     num_chapters: Optional[int] = Field(None, description="导出章节数")
 
 
+class ConsistencyCheckRequest(BaseModel):
+    """一致性检查请求"""
+    filepath: str = Field(..., description="项目路径")
+    chapter_num: int = Field(..., description="要检查的章节号")
+
+
+class PlotlineCreate(BaseModel):
+    """创建情节线请求"""
+    filepath: str = Field(..., description="项目路径")
+    plot_id: str = Field(..., description="情节ID")
+    title: str = Field(..., description="情节标题")
+    description: str = Field(..., description="情节描述")
+    importance: str = Field(..., description="重要性: main/major/minor/background")
+    start_chapter: int = Field(..., ge=1, description="起始章节")
+    expected_end_chapter: int = Field(..., ge=1, description="预期结束章节")
+    related_characters: Optional[List[str]] = Field(default_factory=list, description="相关角色")
+    related_locations: Optional[List[str]] = Field(default_factory=list, description="相关地点")
+    parent_plot: Optional[str] = Field(None, description="父情节线ID")
+
+
+class PlotlineUpdate(BaseModel):
+    """更新情节线请求"""
+    filepath: str = Field(..., description="项目路径")
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    importance: Optional[str] = None
+    expected_end_chapter: Optional[int] = None
+    actual_end_chapter: Optional[int] = None
+
+
 class TaskStatus(BaseModel):
     """任务状态"""
     task_id: str
@@ -1253,6 +1284,74 @@ async def export_novel_api(request: ExportRequest):
         )
 
 
+@app.get("/api/v1/novel/export/download", tags=["导出"])
+async def download_export(filepath: str, format: str):
+    """
+    下载导出的小说文件
+
+    Args:
+        filepath: 项目路径
+        format: 导出格式（txt/epub/pdf/docx）
+
+    Returns:
+        导出的文件
+    """
+    try:
+        from fastapi.responses import FileResponse
+
+        # 验证格式
+        valid_formats = ["txt", "epub", "pdf", "docx"]
+        if format not in valid_formats:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"不支持的格式: {format}，支持的格式: {', '.join(valid_formats)}"
+            )
+
+        # 构建文件路径
+        project_dir = Path(filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目不存在: {filepath}"
+            )
+
+        export_file = project_dir / f"novel.{format}"
+        if not export_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"导出文件不存在，请先导出小说"
+            )
+
+        # 设置MIME类型
+        mime_types = {
+            "txt": "text/plain",
+            "epub": "application/epub+zip",
+            "pdf": "application/pdf",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+
+        logger.info(f"下载导出文件: {export_file}")
+
+        # 返回文件
+        return FileResponse(
+            path=str(export_file),
+            media_type=mime_types.get(format, "application/octet-stream"),
+            filename=f"novel.{format}",
+            headers={
+                "Content-Disposition": f'attachment; filename="novel.{format}"'
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"下载导出文件失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
 @app.get("/api/v1/task/{task_id}", tags=["任务"], response_model=TaskStatus)
 async def get_task_status(task_id: str):
     """查询任务状态"""
@@ -1711,6 +1810,409 @@ async def get_visualization_image(filepath: str, filename: str):
         raise
     except Exception as e:
         logger.error(f"获取图片失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/v1/novel/quality", tags=["质量检查"])
+async def get_quality_report(filepath: str):
+    """
+    获取小说质量报告
+
+    Args:
+        filepath: 项目路径
+
+    Returns:
+        质量分析报告，包括统计信息、完整性检查、问题和建议
+    """
+    try:
+        from quality_analyzer import analyze_novel_quality
+
+        project_dir = Path(filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目不存在: {filepath}"
+            )
+
+        logger.info(f"开始生成质量报告: {filepath}")
+
+        # 异步执行质量分析
+        report = await asyncio.to_thread(analyze_novel_quality, filepath)
+
+        return {
+            "success": True,
+            "filepath": filepath,
+            **report
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"生成质量报告失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.post("/api/v1/novel/consistency", tags=["质量检查"])
+async def check_consistency_api(request: ConsistencyCheckRequest):
+    """
+    检查章节与小说设定的一致性
+
+    Args:
+        request: 一致性检查请求，包含项目路径和章节号
+
+    Returns:
+        一致性检查报告
+    """
+    try:
+        from consistency_checker import check_consistency
+        from utils import read_file
+
+        project_dir = Path(request.filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目不存在: {request.filepath}"
+            )
+
+        # 读取章节文件
+        chapter_file = project_dir / "chapters" / f"chapter_{request.chapter_num}.txt"
+        if not chapter_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"章节文件不存在: chapter_{request.chapter_num}.txt"
+            )
+
+        chapter_text = read_file(str(chapter_file))
+
+        # 读取相关文件
+        arch_file = project_dir / "Novel_architecture.txt"
+        novel_setting = read_file(str(arch_file)) if arch_file.exists() else ""
+
+        character_state_file = project_dir / "character_state.txt"
+        character_state = read_file(str(character_state_file)) if character_state_file.exists() else ""
+
+        global_summary_file = project_dir / "global_summary.txt"
+        global_summary = read_file(str(global_summary_file)) if global_summary_file.exists() else ""
+
+        # 读取情节线（如果有）
+        plot_file = project_dir / "plotlines.json"
+        plot_arcs = ""
+        if plot_file.exists():
+            try:
+                import json
+                with open(plot_file, 'r', encoding='utf-8') as f:
+                    plotlines = json.load(f)
+                    # 提取未解决的情节
+                    active_plots = [p for p in plotlines.values()
+                                  if p.get('status') in ['active', 'planned']]
+                    if active_plots:
+                        plot_arcs = "\n".join([
+                            f"- {p.get('title', '')}: {p.get('description', '')}"
+                            for p in active_plots
+                        ])
+            except Exception as e:
+                logger.warning(f"读取情节线失败: {e}")
+
+        # 加载配置
+        config = load_project_config(request.filepath)
+
+        logger.info(f"开始一致性检查: 章节{request.chapter_num}")
+
+        # 执行一致性检查
+        report = await asyncio.to_thread(
+            check_consistency,
+            novel_setting=novel_setting,
+            character_state=character_state,
+            global_summary=global_summary,
+            chapter_text=chapter_text,
+            api_key=config["llm"]["api_key"],
+            base_url=config["llm"]["base_url"],
+            model_name=config["llm"]["model_name"],
+            temperature=0.3,
+            plot_arcs=plot_arcs,
+            interface_format=config["llm"]["interface_format"],
+            max_tokens=config["llm"]["max_tokens"],
+            timeout=config["llm"]["timeout"]
+        )
+
+        return {
+            "success": True,
+            "chapter_num": request.chapter_num,
+            "report": report
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"一致性检查失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/v1/longnovel/plotlines", tags=["长篇小说"])
+async def get_plotlines(filepath: str):
+    """
+    获取项目的所有情节线
+
+    Args:
+        filepath: 项目路径
+
+    Returns:
+        情节线列表
+    """
+    try:
+        from plot_tracker import PlotlineTracker
+
+        project_dir = Path(filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目不存在: {filepath}"
+            )
+
+        # 加载情节追踪器
+        tracker = PlotlineTracker(filepath)
+
+        # 返回所有情节线
+        plotlines = list(tracker.plotlines.values())
+
+        return {
+            "success": True,
+            "total": len(plotlines),
+            "plotlines": plotlines
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取情节线失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.post("/api/v1/longnovel/plotlines", tags=["长篇小说"])
+async def create_plotline(request: PlotlineCreate):
+    """
+    创建新的情节线
+
+    Args:
+        request: 情节线创建请求
+
+    Returns:
+        创建的情节线信息
+    """
+    try:
+        from plot_tracker import PlotlineTracker, PlotImportance
+
+        project_dir = Path(request.filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目不存在: {request.filepath}"
+            )
+
+        # 验证重要性参数
+        valid_importance = ["main", "major", "minor", "background"]
+        if request.importance not in valid_importance:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"无效的重要性等级，支持: {', '.join(valid_importance)}"
+            )
+
+        # 加载情节追踪器
+        tracker = PlotlineTracker(request.filepath)
+
+        # 创建情节线
+        tracker.create_plotline(
+            plot_id=request.plot_id,
+            title=request.title,
+            description=request.description,
+            importance=PlotImportance(request.importance),
+            start_chapter=request.start_chapter,
+            expected_end_chapter=request.expected_end_chapter,
+            related_characters=request.related_characters,
+            related_locations=request.related_locations,
+            parent_plot=request.parent_plot
+        )
+
+        # 返回创建的情节线
+        plotline = tracker.plotlines.get(request.plot_id)
+
+        return {
+            "success": True,
+            "message": "情节线创建成功",
+            "plotline": plotline
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建情节线失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.put("/api/v1/longnovel/plotlines/{plot_id}", tags=["长篇小说"])
+async def update_plotline(plot_id: str, request: PlotlineUpdate):
+    """
+    更新情节线信息
+
+    Args:
+        plot_id: 情节线ID
+        request: 更新请求
+
+    Returns:
+        更新后的情节线信息
+    """
+    try:
+        from plot_tracker import PlotlineTracker
+
+        project_dir = Path(request.filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目不存在: {request.filepath}"
+            )
+
+        # 加载情节追踪器
+        tracker = PlotlineTracker(request.filepath)
+
+        # 检查情节线是否存在
+        if plot_id not in tracker.plotlines:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"情节线不存在: {plot_id}"
+            )
+
+        # 准备更新数据
+        update_data = {}
+        if request.title is not None:
+            update_data["title"] = request.title
+        if request.description is not None:
+            update_data["description"] = request.description
+        if request.status is not None:
+            update_data["status"] = request.status
+        if request.importance is not None:
+            update_data["importance"] = request.importance
+        if request.expected_end_chapter is not None:
+            update_data["expected_end_chapter"] = request.expected_end_chapter
+        if request.actual_end_chapter is not None:
+            update_data["actual_end_chapter"] = request.actual_end_chapter
+
+        # 更新情节线
+        tracker.update_plotline(plot_id, **update_data)
+
+        # 返回更新后的情节线
+        plotline = tracker.plotlines.get(plot_id)
+
+        return {
+            "success": True,
+            "message": "情节线更新成功",
+            "plotline": plotline
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新情节线失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/v1/longnovel/context", tags=["长篇小说"])
+async def get_context_report(filepath: str):
+    """
+    获取长篇小说上下文报告
+
+    包括情节线状态、章节覆盖情况等
+
+    Args:
+        filepath: 项目路径
+
+    Returns:
+        上下文报告
+    """
+    try:
+        from plot_tracker import PlotlineTracker
+
+        project_dir = Path(filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目不存在: {filepath}"
+            )
+
+        # 加载情节追踪器
+        tracker = PlotlineTracker(filepath)
+
+        # 统计情节线状态
+        status_counts = {}
+        importance_counts = {}
+        active_plots = []
+        unresolved_plots = []
+
+        for plotline in tracker.plotlines.values():
+            # 状态统计
+            status = plotline.get("status", "planned")
+            status_counts[status] = status_counts.get(status, 0) + 1
+
+            # 重要性统计
+            importance = plotline.get("importance", "minor")
+            importance_counts[importance] = importance_counts.get(importance, 0) + 1
+
+            # 活跃情节
+            if status == "active":
+                active_plots.append({
+                    "plot_id": plotline.get("plot_id"),
+                    "title": plotline.get("title"),
+                    "start_chapter": plotline.get("start_chapter"),
+                    "expected_end_chapter": plotline.get("expected_end_chapter")
+                })
+
+            # 未解决情节
+            if status in ["active", "planned", "suspended"]:
+                unresolved_plots.append({
+                    "plot_id": plotline.get("plot_id"),
+                    "title": plotline.get("title"),
+                    "status": status
+                })
+
+        # 统计章节信息
+        chapters_dir = project_dir / "chapters"
+        total_chapters = 0
+        if chapters_dir.exists():
+            total_chapters = len(list(chapters_dir.glob("chapter_*.txt")))
+
+        return {
+            "success": True,
+            "summary": {
+                "total_plotlines": len(tracker.plotlines),
+                "total_chapters": total_chapters,
+                "status_counts": status_counts,
+                "importance_counts": importance_counts
+            },
+            "active_plots": active_plots,
+            "unresolved_plots": unresolved_plots
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取上下文报告失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

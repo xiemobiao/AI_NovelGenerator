@@ -247,6 +247,11 @@ class APIClient {
     return response.data;
   }
 
+  async getConfigPresets(): Promise<{ presets: any; providers: string[] }> {
+    const response = await this.client.get('/config/presets');
+    return response.data;
+  }
+
   // ==================== 知识库 ====================
   async importKnowledge(filepath: string, file: File): Promise<{ success: boolean }> {
     const formData = new FormData();
