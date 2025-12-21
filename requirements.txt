@@ -46,6 +46,10 @@ pytest
 pytest-asyncio
 pytest-cov
 
+# 可视化依赖
+matplotlib
+numpy
+
 # 可选依赖（按需安装）
 # google-cloud-aiplatform
 # anthropic

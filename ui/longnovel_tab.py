@@ -81,11 +81,13 @@ class LongNovelTab:
         self.sub_tabview.add("卷管理")
         self.sub_tabview.add("情节线")
         self.sub_tabview.add("质量报告")
+        self.sub_tabview.add("Visualizations")
 
         # 构建各子页面
         self.build_volumes_page()
         self.build_plotlines_page()
         self.build_quality_page()
+        self.build_visualizations_page()
 
     # ==================== 初始化 ====================
 
@@ -506,3 +508,254 @@ class LongNovelTab:
             error_msg = f"生成质量报告失败: {str(e)}"
             self.quality_text.insert("1.0", error_msg)
             self.log(f"❌ {error_msg}\n")
+
+    def build_visualizations_page(self):
+        """构建可视化页面"""
+        vis_frame = self.sub_tabview.tab("Visualizations")
+
+        # 标题
+        title_label = ctk.CTkLabel(
+            vis_frame,
+            text="📊 数据可视化",
+            font=("Microsoft YaHei", 20, "bold")
+        )
+        title_label.pack(pady=10)
+
+        # 说明文本
+        info_text = """
+生成各种可视化图表来分析小说的结构和质量：
+• 情节线时间轴：显示所有情节线的时间分布和状态
+• 角色关系图：展示角色之间的关联和互动强度
+• 质量热力图：分析每章的质量指标（情节密度、角色活跃度等）
+        """
+        info_label = ctk.CTkLabel(
+            vis_frame,
+            text=info_text,
+            font=("Microsoft YaHei", 11),
+            justify="left"
+        )
+        info_label.pack(pady=5, padx=20)
+
+        # 按钮区域
+        button_frame = ctk.CTkFrame(vis_frame)
+        button_frame.pack(pady=20, padx=20, fill="x")
+
+        # 第一行按钮
+        row1 = ctk.CTkFrame(button_frame)
+        row1.pack(pady=5, fill="x")
+
+        btn_timeline = ctk.CTkButton(
+            row1,
+            text="生成情节线时间轴",
+            command=self.generate_timeline,
+            font=("Microsoft YaHei", 13),
+            width=200
+        )
+        btn_timeline.pack(side="left", padx=10)
+
+        btn_relationship = ctk.CTkButton(
+            row1,
+            text="生成角色关系图",
+            command=self.generate_relationship_graph,
+            font=("Microsoft YaHei", 13),
+            width=200
+        )
+        btn_relationship.pack(side="left", padx=10)
+
+        btn_heatmap = ctk.CTkButton(
+            row1,
+            text="生成质量热力图",
+            command=self.generate_quality_heatmap,
+            font=("Microsoft YaHei", 13),
+            width=200
+        )
+        btn_heatmap.pack(side="left", padx=10)
+
+        # 第二行按钮
+        row2 = ctk.CTkFrame(button_frame)
+        row2.pack(pady=5, fill="x")
+
+        btn_all = ctk.CTkButton(
+            row2,
+            text="生成全部可视化",
+            command=self.generate_all_visualizations,
+            font=("Microsoft YaHei", 13, "bold"),
+            width=200,
+            fg_color="#2E7D32"
+        )
+        btn_all.pack(side="left", padx=10)
+
+        btn_open_folder = ctk.CTkButton(
+            row2,
+            text="打开可视化文件夹",
+            command=self.open_visualizations_folder,
+            font=("Microsoft YaHei", 13),
+            width=200
+        )
+        btn_open_folder.pack(side="left", padx=10)
+
+        # 显示区域（显示生成的图片）
+        display_frame = ctk.CTkFrame(vis_frame)
+        display_frame.pack(pady=10, padx=20, fill="both", expand=True)
+
+        self.vis_status_label = ctk.CTkLabel(
+            display_frame,
+            text="点击上方按钮生成可视化图表\n生成的图表将保存在项目的 visualizations 文件夹中",
+            font=("Microsoft YaHei", 12),
+            text_color="gray"
+        )
+        self.vis_status_label.pack(expand=True)
+
+    def generate_timeline(self):
+        """生成情节线时间轴"""
+        if not self.plot_tracker:
+            self.log("❌ 请先初始化项目管理\n")
+            return
+
+        import threading
+
+        def task():
+            try:
+                self.log("📊 开始生成情节线时间轴...\n")
+                from visualizations import PlotlineTimeline
+                from pathlib import Path
+                import datetime
+
+                output_dir = Path(self.filepath_var.get()) / "visualizations"
+                output_dir.mkdir(exist_ok=True)
+
+                filename = f"plotline_timeline_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                output_path = output_dir / filename
+
+                viz = PlotlineTimeline(self.plot_tracker)
+                viz.create_timeline(str(output_path))
+
+                self.log(f"✅ 时间轴已生成: {filename}\n")
+                self.vis_status_label.configure(
+                    text=f"✅ 时间轴已生成\n{filename}"
+                )
+            except Exception as e:
+                self.log(f"❌ 生成时间轴失败: {str(e)}\n")
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def generate_relationship_graph(self):
+        """生成角色关系图"""
+        if not self.context_manager:
+            self.log("❌ 请先初始化项目管理\n")
+            return
+
+        import threading
+
+        def task():
+            try:
+                self.log("📊 开始生成角色关系图...\n")
+                from visualizations import CharacterRelationshipGraph
+                from pathlib import Path
+                import datetime
+
+                output_dir = Path(self.filepath_var.get()) / "visualizations"
+                output_dir.mkdir(exist_ok=True)
+
+                filename = f"character_relationships_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                output_path = output_dir / filename
+
+                viz = CharacterRelationshipGraph(self.context_manager)
+                viz.create_relationship_graph(str(output_path))
+
+                self.log(f"✅ 关系图已生成: {filename}\n")
+                self.vis_status_label.configure(
+                    text=f"✅ 关系图已生成\n{filename}"
+                )
+            except Exception as e:
+                self.log(f"❌ 生成关系图失败: {str(e)}\n")
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def generate_quality_heatmap(self):
+        """生成质量热力图"""
+        if not self.context_manager or not self.plot_tracker:
+            self.log("❌ 请先初始化项目管理\n")
+            return
+
+        import threading
+
+        def task():
+            try:
+                self.log("📊 开始生成质量热力图...\n")
+                from visualizations import QualityHeatmap
+                from pathlib import Path
+                import datetime
+
+                output_dir = Path(self.filepath_var.get()) / "visualizations"
+                output_dir.mkdir(exist_ok=True)
+
+                filename = f"quality_heatmap_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                output_path = output_dir / filename
+
+                viz = QualityHeatmap(self.context_manager, self.plot_tracker)
+                viz.create_quality_heatmap(str(output_path))
+
+                self.log(f"✅ 热力图已生成: {filename}\n")
+                self.vis_status_label.configure(
+                    text=f"✅ 热力图已生成\n{filename}"
+                )
+            except Exception as e:
+                self.log(f"❌ 生成热力图失败: {str(e)}\n")
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def generate_all_visualizations(self):
+        """生成全部可视化"""
+        if not self.context_manager or not self.plot_tracker:
+            self.log("❌ 请先初始化项目管理\n")
+            return
+
+        import threading
+
+        def task():
+            try:
+                self.log("📊 开始生成全部可视化...\n")
+                from visualizations import generate_all_visualizations
+
+                filepath = self.filepath_var.get()
+                results = generate_all_visualizations(filepath)
+
+                if results:
+                    self.log(f"✅ 全部可视化已生成:\n")
+                    for vis_type, path in results.items():
+                        self.log(f"  - {vis_type}: {Path(path).name}\n")
+                    self.vis_status_label.configure(
+                        text=f"✅ 已生成 {len(results)} 个可视化图表"
+                    )
+                else:
+                    self.log("⚠️ 未生成任何可视化\n")
+            except Exception as e:
+                self.log(f"❌ 生成可视化失败: {str(e)}\n")
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def open_visualizations_folder(self):
+        """打开可视化文件夹"""
+        import os
+        import platform
+        from pathlib import Path
+
+        vis_dir = Path(self.filepath_var.get()) / "visualizations"
+
+        if not vis_dir.exists():
+            vis_dir.mkdir(exist_ok=True)
+            self.log("📁 已创建visualizations文件夹\n")
+
+        # 根据操作系统打开文件夹
+        try:
+            if platform.system() == "Windows":
+                os.startfile(vis_dir)
+            elif platform.system() == "Darwin":  # macOS
+                os.system(f"open '{vis_dir}'")
+            else:  # Linux
+                os.system(f"xdg-open '{vis_dir}'")
+
+            self.log(f"📂 已打开文件夹: {vis_dir}\n")
+        except Exception as e:
+            self.log(f"❌ 打开文件夹失败: {str(e)}\n")
