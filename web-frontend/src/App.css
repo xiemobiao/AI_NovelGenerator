@@ -1,0 +1,39 @@
+/* App specific styles */
+.app-container {
+  min-height: 100vh;
+  background: #f0f2f5;
+}
+
+/* Ant Design customization */
+.ant-layout {
+  background: #f0f2f5;
+}
+
+.ant-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Editor styles */
+.monaco-editor {
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+}
+
+/* Custom transitions */
+.fade-enter {
+  opacity: 0;
+}
+
+.fade-enter-active {
+  opacity: 1;
+  transition: opacity 200ms;
+}
+
+.fade-exit {
+  opacity: 1;
+}
+
+.fade-exit-active {
+  opacity: 0;
+  transition: opacity 200ms;
+}
