@@ -137,9 +137,21 @@ class GenerationRequest(BaseModel):
 
 class ChapterGenerationRequest(BaseModel):
     """章节生成请求"""
-    project_id: str = Field(..., description="项目ID")
-    chapter_number: int = Field(..., ge=1, description="章节号")
-    chapter_guidance: Optional[str] = Field(None, description="本章指导")
+    filepath: str = Field(..., description="项目路径")
+    chapter_num: int = Field(..., ge=1, description="章节号")
+    word_number: int = Field(3000, ge=500, le=10000, description="字数")
+    characters_involved: Optional[str] = Field(None, description="涉及角色")
+    key_items: Optional[str] = Field(None, description="关键物品")
+    scene_location: Optional[str] = Field(None, description="场景地点")
+    time_constraint: Optional[str] = Field(None, description="时间限制")
+    user_guidance: Optional[str] = Field(None, description="剧情指导")
+
+
+class ChapterFinalizeRequest(BaseModel):
+    """章节定稿请求"""
+    filepath: str = Field(..., description="项目路径")
+    chapter_num: int = Field(..., ge=1, description="章节号")
+    word_number: int = Field(3000, ge=500, le=10000, description="字数")
 
 
 class ExportRequest(BaseModel):
@@ -164,6 +176,125 @@ class TaskStatus(BaseModel):
 
 
 # ==================== 辅助函数 ====================
+
+def load_project_config(filepath: str) -> Dict[str, Any]:
+    """
+    加载项目配置，包括LLM和Embedding配置
+
+    优先级：
+    1. 项目目录下的config.json
+    2. 环境变量
+    3. 默认配置
+    """
+    import json
+
+    config = {
+        "llm": {
+            "interface_format": os.getenv("LLM_INTERFACE_FORMAT", "openai"),
+            "api_key": os.getenv("LLM_API_KEY", ""),
+            "base_url": os.getenv("LLM_BASE_URL", ""),
+            "model_name": os.getenv("LLM_MODEL_NAME", "gpt-4o-mini"),
+            "temperature": float(os.getenv("LLM_TEMPERATURE", "0.7")),
+            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "4096")),
+            "timeout": int(os.getenv("LLM_TIMEOUT", "600"))
+        },
+        "embedding": {
+            "interface_format": os.getenv("EMBEDDING_INTERFACE_FORMAT", "openai"),
+            "api_key": os.getenv("EMBEDDING_API_KEY", ""),
+            "base_url": os.getenv("EMBEDDING_BASE_URL", ""),
+            "model_name": os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small"),
+            "retrieval_k": int(os.getenv("EMBEDDING_RETRIEVAL_K", "4"))
+        }
+    }
+
+    # 尝试从项目配置文件加载
+    config_file = Path(filepath) / "config.json"
+    if config_file.exists():
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                project_config = json.load(f)
+                if "llm" in project_config:
+                    config["llm"].update(project_config["llm"])
+                if "embedding" in project_config:
+                    config["embedding"].update(project_config["embedding"])
+        except Exception as e:
+            logger.warning(f"加载项目配置失败: {e}")
+
+    return config
+
+
+def parse_blueprint_file(filepath: str) -> List[Dict]:
+    """
+    解析Novel_directory.txt文件，提取章节蓝图信息
+
+    返回格式：
+    [
+        {
+            "chapter_number": 1,
+            "title": "章节标题",
+            "summary": "内容摘要",
+            "key_events": ["事件1", "事件2"],
+            "characters": ["角色1", "角色2"]
+        },
+        ...
+    ]
+    """
+    import re
+
+    blueprint_file = Path(filepath) / "Novel_directory.txt"
+    if not blueprint_file.exists():
+        return []
+
+    try:
+        with open(blueprint_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        blueprints = []
+        # 使用正则表达式分割章节
+        chapter_pattern = r'第\s*(\d+)\s*章[：:](.*?)(?=第\s*\d+\s*章|$)'
+        matches = re.findall(chapter_pattern, content, re.DOTALL)
+
+        for match in matches:
+            chapter_num = int(match[0])
+            chapter_content = match[1].strip()
+
+            # 提取标题（第一行）
+            lines = chapter_content.split('\n')
+            title = lines[0].strip() if lines else ""
+
+            # 提取摘要和其他信息
+            summary = ""
+            key_events = []
+            characters = []
+
+            for line in lines[1:]:
+                line = line.strip()
+                if line.startswith("摘要") or line.startswith("内容"):
+                    summary = line.split(':', 1)[-1].strip() if ':' in line else line
+                elif line.startswith("关键事件") or line.startswith("事件"):
+                    # 可能有多个事件列出
+                    events_text = line.split(':', 1)[-1].strip() if ':' in line else ""
+                    if events_text:
+                        key_events = [e.strip() for e in events_text.split('、') if e.strip()]
+                elif line.startswith("角色") or line.startswith("人物"):
+                    chars_text = line.split(':', 1)[-1].strip() if ':' in line else ""
+                    if chars_text:
+                        characters = [c.strip() for c in chars_text.split('、') if c.strip()]
+
+            blueprints.append({
+                "chapter_number": chapter_num,
+                "title": title,
+                "summary": summary or chapter_content[:200],  # 如果没有摘要，取前200字
+                "key_events": key_events,
+                "characters": characters
+            })
+
+        return sorted(blueprints, key=lambda x: x["chapter_number"])
+
+    except Exception as e:
+        logger.error(f"解析蓝图文件失败: {e}", exc_info=True)
+        return []
+
 
 def create_task(task_type: str, description: str) -> str:
     """创建新任务"""
@@ -215,20 +346,6 @@ async def generate_architecture_async(task_id: str, request: GenerationRequest):
 
         # 导入生成模块
         from novel_generator import Novel_architecture_generate
-        from llm_adapters import create_llm_adapter
-
-        update_task(task_id, progress=20, message="创建LLM适配器...")
-
-        # 创建LLM适配器
-        llm = create_llm_adapter(
-            interface_format=request.llm_config.interface_format,
-            api_key=request.llm_config.api_key,
-            base_url=request.llm_config.base_url,
-            model_name=request.llm_config.model_name,
-            temperature=request.llm_config.temperature,
-            max_tokens=request.llm_config.max_tokens,
-            timeout=request.llm_config.timeout
-        )
 
         update_task(task_id, progress=30, message="生成小说架构...")
 
@@ -238,17 +355,19 @@ async def generate_architecture_async(task_id: str, request: GenerationRequest):
 
         result = await asyncio.to_thread(
             Novel_architecture_generate,
-            llm=llm,
+            interface_format=request.llm_config.interface_format,
+            api_key=request.llm_config.api_key,
+            base_url=request.llm_config.base_url,
+            llm_model=request.llm_config.model_name,
             topic=request.novel_config.topic,
             genre=request.novel_config.genre,
-            num_chapters=request.novel_config.num_chapters,
+            number_of_chapters=request.novel_config.num_chapters,
             word_number=request.novel_config.word_number,
             filepath=str(output_dir),
-            content_guidance=request.novel_config.content_guidance,
-            core_characters=request.novel_config.core_characters,
-            key_items=request.novel_config.key_items,
-            scenes=request.novel_config.scenes,
-            time_constraints=request.novel_config.time_constraints
+            user_guidance=request.novel_config.content_guidance or "",
+            temperature=request.llm_config.temperature,
+            max_tokens=request.llm_config.max_tokens,
+            timeout=request.llm_config.timeout
         )
 
         update_task(
@@ -265,6 +384,176 @@ async def generate_architecture_async(task_id: str, request: GenerationRequest):
             task_id,
             status="failed",
             message="生成失败",
+            error=str(e)
+        )
+
+
+async def generate_blueprint_async(task_id: str, request: GenerationRequest):
+    """异步生成章节蓝图"""
+    try:
+        update_task(task_id, status="running", progress=10, message="初始化蓝图生成...")
+
+        # 导入生成模块
+        from novel_generator import Chapter_blueprint_generate
+
+        update_task(task_id, progress=30, message="生成章节蓝图...")
+
+        # 生成蓝图
+        output_dir = Path(request.output_dir)
+        if not output_dir.exists():
+            raise ValueError(f"项目目录不存在: {output_dir}")
+
+        arch_file = output_dir / "Novel_architecture.txt"
+        if not arch_file.exists():
+            raise ValueError("请先生成小说架构")
+
+        result = await asyncio.to_thread(
+            Chapter_blueprint_generate,
+            interface_format=request.llm_config.interface_format,
+            api_key=request.llm_config.api_key,
+            base_url=request.llm_config.base_url,
+            llm_model=request.llm_config.model_name,
+            filepath=str(output_dir),
+            number_of_chapters=request.novel_config.num_chapters,
+            user_guidance=request.novel_config.content_guidance or "",
+            temperature=request.llm_config.temperature,
+            max_tokens=request.llm_config.max_tokens,
+            timeout=request.llm_config.timeout
+        )
+
+        update_task(
+            task_id,
+            status="completed",
+            progress=100,
+            message="蓝图生成完成",
+            result={"blueprint_file": str(output_dir / "Novel_directory.txt")}
+        )
+
+    except Exception as e:
+        logger.error(f"生成蓝图失败: {e}", exc_info=True)
+        update_task(
+            task_id,
+            status="failed",
+            message="生成失败",
+            error=str(e)
+        )
+
+
+async def generate_chapter_async(task_id: str, chapter_req: ChapterGenerationRequest):
+    """异步生成章节草稿"""
+    try:
+        update_task(task_id, status="running", progress=10, message="初始化章节生成...")
+
+        # 加载项目配置
+        config = load_project_config(chapter_req.filepath)
+
+        # 导入生成模块
+        from novel_generator import generate_chapter_draft
+
+        update_task(task_id, progress=30, message=f"生成第{chapter_req.chapter_num}章...")
+
+        # 确保chapters目录存在
+        project_dir = Path(chapter_req.filepath)
+        chapters_dir = project_dir / "chapters"
+        chapters_dir.mkdir(parents=True, exist_ok=True)
+
+        result = await asyncio.to_thread(
+            generate_chapter_draft,
+            api_key=config["llm"]["api_key"],
+            base_url=config["llm"]["base_url"],
+            model_name=config["llm"]["model_name"],
+            filepath=str(project_dir),
+            novel_number=chapter_req.chapter_num,
+            word_number=chapter_req.word_number,
+            temperature=config["llm"]["temperature"],
+            user_guidance=chapter_req.user_guidance or "",
+            characters_involved=chapter_req.characters_involved or "",
+            key_items=chapter_req.key_items or "",
+            scene_location=chapter_req.scene_location or "",
+            time_constraint=chapter_req.time_constraint or "",
+            embedding_api_key=config["embedding"]["api_key"],
+            embedding_url=config["embedding"]["base_url"],
+            embedding_interface_format=config["embedding"]["interface_format"],
+            embedding_model_name=config["embedding"]["model_name"],
+            embedding_retrieval_k=config["embedding"]["retrieval_k"],
+            interface_format=config["llm"]["interface_format"],
+            max_tokens=config["llm"]["max_tokens"],
+            timeout=config["llm"]["timeout"]
+        )
+
+        chapter_file = chapters_dir / f"chapter_{chapter_req.chapter_num}.txt"
+
+        update_task(
+            task_id,
+            status="completed",
+            progress=100,
+            message="章节生成完成",
+            result={
+                "chapter_number": chapter_req.chapter_num,
+                "chapter_file": str(chapter_file)
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"生成章节失败: {e}", exc_info=True)
+        update_task(
+            task_id,
+            status="failed",
+            message="生成失败",
+            error=str(e)
+        )
+
+
+async def finalize_chapter_async(task_id: str, finalize_req: ChapterFinalizeRequest):
+    """异步定稿章节"""
+    try:
+        update_task(task_id, status="running", progress=10, message="初始化章节定稿...")
+
+        # 加载项目配置
+        config = load_project_config(finalize_req.filepath)
+
+        # 导入定稿模块
+        from novel_generator import finalize_chapter
+
+        update_task(task_id, progress=30, message=f"定稿第{finalize_req.chapter_num}章...")
+
+        project_dir = Path(finalize_req.filepath)
+
+        result = await asyncio.to_thread(
+            finalize_chapter,
+            novel_number=finalize_req.chapter_num,
+            word_number=finalize_req.word_number,
+            api_key=config["llm"]["api_key"],
+            base_url=config["llm"]["base_url"],
+            model_name=config["llm"]["model_name"],
+            temperature=config["llm"]["temperature"],
+            filepath=str(project_dir),
+            embedding_api_key=config["embedding"]["api_key"],
+            embedding_url=config["embedding"]["base_url"],
+            embedding_interface_format=config["embedding"]["interface_format"],
+            embedding_model_name=config["embedding"]["model_name"],
+            interface_format=config["llm"]["interface_format"],
+            max_tokens=config["llm"]["max_tokens"],
+            timeout=config["llm"]["timeout"]
+        )
+
+        update_task(
+            task_id,
+            status="completed",
+            progress=100,
+            message="章节定稿完成",
+            result={
+                "chapter_number": finalize_req.chapter_num,
+                "message": "已更新前文摘要和角色状态"
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"定稿章节失败: {e}", exc_info=True)
+        update_task(
+            task_id,
+            status="failed",
+            message="定稿失败",
             error=str(e)
         )
 
@@ -318,28 +607,341 @@ async def create_architecture(
     }
 
 
-@app.post("/api/v1/novel/blueprint", tags=["生成"])
-async def create_blueprint(request: GenerationRequest, background_tasks: BackgroundTasks):
-    """生成章节目录（Step2）"""
-    # TODO: 实现章节目录生成
-    task_id = create_task("blueprint", "生成章节目录")
-    return {"task_id": task_id, "message": "功能开发中"}
+@app.post("/api/v1/novel/blueprint", tags=["生成"], response_model=Dict[str, str])
+async def create_blueprint(
+    request: GenerationRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    生成章节蓝图（Step2）
+
+    创建一个后台任务来生成章节目录，包括每一章的：
+    - 章节标题
+    - 内容摘要
+    - 关键事件
+    - 涉及角色
+    """
+    task_id = create_task("blueprint", "生成章节蓝图")
+
+    background_tasks.add_task(generate_blueprint_async, task_id, request)
+
+    return {
+        "task_id": task_id,
+        "message": "蓝图生成任务已创建",
+        "status_url": f"/api/v1/task/{task_id}"
+    }
 
 
-@app.post("/api/v1/novel/chapter", tags=["生成"])
-async def generate_chapter(request: ChapterGenerationRequest, background_tasks: BackgroundTasks):
-    """生成章节草稿（Step3）"""
-    # TODO: 实现章节生成
-    task_id = create_task("chapter", f"生成第{request.chapter_number}章")
-    return {"task_id": task_id, "message": "功能开发中"}
+@app.get("/api/v1/novel/blueprint", tags=["查询"])
+async def get_blueprint(filepath: str):
+    """
+    获取章节蓝图列表
+
+    从Novel_directory.txt文件中读取并解析章节蓝图信息
+
+    Args:
+        filepath: 项目目录路径
+
+    Returns:
+        章节蓝图列表
+    """
+    try:
+        project_dir = Path(filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目目录不存在: {filepath}"
+            )
+
+        blueprints = parse_blueprint_file(filepath)
+
+        return {
+            "total": len(blueprints),
+            "blueprints": blueprints
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取蓝图失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
-@app.post("/api/v1/novel/finalize", tags=["生成"])
-async def finalize_chapter(request: ChapterGenerationRequest, background_tasks: BackgroundTasks):
-    """定稿章节（Step4）"""
-    # TODO: 实现章节定稿
-    task_id = create_task("finalize", f"定稿第{request.chapter_number}章")
-    return {"task_id": task_id, "message": "功能开发中"}
+@app.post("/api/v1/novel/chapter/draft", tags=["生成"], response_model=Dict[str, str])
+async def generate_chapter_draft(
+    request: ChapterGenerationRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    生成章节草稿（Step3）
+
+    创建一个后台任务来生成章节内容，包括：
+    - 读取小说架构和章节蓝图
+    - 检索相关知识库上下文
+    - 生成章节草稿文本
+    """
+    try:
+        project_dir = Path(request.filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目目录不存在: {request.filepath}"
+            )
+
+        task_id = create_task("chapter", f"生成第{request.chapter_num}章草稿")
+
+        background_tasks.add_task(generate_chapter_async, task_id, request)
+
+        return {
+            "task_id": task_id,
+            "message": "章节生成任务已创建",
+            "status_url": f"/api/v1/task/{task_id}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建章节生成任务失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.post("/api/v1/novel/chapter/finalize", tags=["生成"], response_model=Dict[str, str])
+async def finalize_chapter_endpoint(
+    request: ChapterFinalizeRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    定稿章节（Step4）
+
+    创建一个后台任务来定稿章节，包括：
+    - 更新前文摘要
+    - 更新角色状态
+    - 将章节内容存入向量库
+    """
+    try:
+        project_dir = Path(request.filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目目录不存在: {request.filepath}"
+            )
+
+        chapter_file = project_dir / "chapters" / f"chapter_{request.chapter_num}.txt"
+        if not chapter_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"章节文件不存在，请先生成章节草稿"
+            )
+
+        task_id = create_task("finalize", f"定稿第{request.chapter_num}章")
+
+        background_tasks.add_task(finalize_chapter_async, task_id, request)
+
+        return {
+            "task_id": task_id,
+            "message": "定稿任务已创建",
+            "status_url": f"/api/v1/task/{task_id}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建定稿任务失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/v1/novel/chapters", tags=["查询"])
+async def list_chapters(filepath: str):
+    """
+    列出所有章节
+
+    返回项目中所有已生成的章节列表
+    """
+    try:
+        project_dir = Path(filepath)
+        if not project_dir.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"项目目录不存在: {filepath}"
+            )
+
+        chapters_dir = project_dir / "chapters"
+        if not chapters_dir.exists():
+            return {"total": 0, "chapters": []}
+
+        chapters = []
+        for chapter_file in sorted(chapters_dir.glob("chapter_*.txt")):
+            # 从文件名提取章节号
+            filename = chapter_file.stem  # chapter_1
+            try:
+                chapter_num = int(filename.split('_')[1])
+
+                # 读取章节内容
+                with open(chapter_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # 提取标题（第一行）
+                lines = content.split('\n')
+                title = lines[0].strip() if lines else ""
+
+                # 计算字数
+                word_count = len(content)
+
+                # 判断状态（简化处理，如果存在向量库记录则为final）
+                status_value = "draft"  # 默认为草稿
+
+                chapters.append({
+                    "chapter_number": chapter_num,
+                    "title": title or f"第{chapter_num}章",
+                    "word_count": word_count,
+                    "status": status_value,
+                    "content": content[:200] + "..." if len(content) > 200 else content  # 预览
+                })
+            except (ValueError, IndexError):
+                continue
+
+        return {
+            "total": len(chapters),
+            "chapters": sorted(chapters, key=lambda x: x["chapter_number"])
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"列出章节失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/v1/novel/chapter", tags=["查询"])
+async def get_chapter(filepath: str, chapter_num: int):
+    """
+    获取单个章节的完整内容
+
+    Args:
+        filepath: 项目路径
+        chapter_num: 章节号
+    """
+    try:
+        project_dir = Path(filepath)
+        chapter_file = project_dir / "chapters" / f"chapter_{chapter_num}.txt"
+
+        if not chapter_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"章节 {chapter_num} 不存在"
+            )
+
+        with open(chapter_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # 提取标题
+        lines = content.split('\n')
+        title = lines[0].strip() if lines else ""
+
+        return {
+            "chapter_number": chapter_num,
+            "title": title or f"第{chapter_num}章",
+            "content": content,
+            "word_count": len(content),
+            "status": "draft"  # 简化处理
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取章节失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.put("/api/v1/novel/chapter", tags=["编辑"])
+async def update_chapter(
+    filepath: str,
+    chapter_num: int,
+    content: str
+):
+    """
+    更新章节内容
+
+    Args:
+        filepath: 项目路径
+        chapter_num: 章节号
+        content: 新的章节内容
+    """
+    try:
+        project_dir = Path(filepath)
+        chapters_dir = project_dir / "chapters"
+        chapters_dir.mkdir(parents=True, exist_ok=True)
+
+        chapter_file = chapters_dir / f"chapter_{chapter_num}.txt"
+
+        # 保存新内容
+        with open(chapter_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        logger.info(f"章节 {chapter_num} 已更新")
+
+        return {
+            "message": "章节更新成功",
+            "chapter_number": chapter_num,
+            "word_count": len(content)
+        }
+
+    except Exception as e:
+        logger.error(f"更新章节失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@app.get("/api/v1/novel/architecture", tags=["查询"])
+async def get_architecture(filepath: str):
+    """
+    获取小说架构
+
+    读取并返回Novel_architecture.txt的内容
+    """
+    try:
+        project_dir = Path(filepath)
+        arch_file = project_dir / "Novel_architecture.txt"
+
+        if not arch_file.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="小说架构不存在，请先生成架构"
+            )
+
+        with open(arch_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        return {
+            "content": content,
+            "file_path": str(arch_file)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取架构失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
 @app.post("/api/v1/novel/export", tags=["导出"])
