@@ -94,6 +94,41 @@ class OpenAIAdapter(BaseLLMAdapter):
             return ""
         return response.content
 
+class OpenRouterAdapter(BaseLLMAdapter):
+    """
+    适配 OpenRouter API（OpenAI兼容）
+    支持通过单一API访问多个模型提供商
+    """
+    def __init__(self, api_key: str, base_url: str, model_name: str, max_tokens: int, temperature: float = 0.7, timeout: Optional[int] = 600):
+        self.base_url = check_base_url(base_url) if base_url else "https://openrouter.ai/api/v1"
+        self.api_key = api_key
+        self.model_name = model_name
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.timeout = timeout
+
+        # OpenRouter需要特殊的headers
+        self._client = ChatOpenAI(
+            model=self.model_name,
+            api_key=self.api_key,
+            base_url=self.base_url,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            timeout=self.timeout,
+            default_headers={
+                "HTTP-Referer": "https://github.com/yourusername/AI_NovelGenerator",  # 可选：您的应用URL
+                "X-Title": "AI Novel Generator"  # 可选：您的应用名称
+            }
+        )
+
+    def invoke(self, prompt: str) -> str:
+        response = self._client.invoke(prompt)
+        if not response:
+            logging.warning("No response from OpenRouterAdapter.")
+            return ""
+        return response.content
+
+
 class GeminiAdapter(BaseLLMAdapter):
     """
     适配 Google Gemini (Google Generative AI) 接口
@@ -356,7 +391,9 @@ def create_llm_adapter(
         return DeepSeekAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
     elif fmt == "openai":
         return OpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
-    elif fmt == "azure openai":
+    elif fmt == "openrouter":
+        return OpenRouterAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    elif fmt == "azure openai" or fmt == "azure":
         return AzureOpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
     elif fmt == "azure ai":
         return AzureAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
@@ -366,6 +403,8 @@ def create_llm_adapter(
         return MLStudioAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
     elif fmt == "gemini":
         return GeminiAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
+    elif fmt == "claude":
+        return OpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
     elif fmt == "阿里云百炼":
         return OpenAIAdapter(api_key, base_url, model_name, max_tokens, temperature, timeout)
     elif fmt == "火山引擎":

@@ -241,6 +241,172 @@ def load_project_config(filepath: str) -> Dict[str, Any]:
 GLOBAL_CONFIG_FILE = Path("./config.json")
 
 
+# 模型提供商预设配置
+MODEL_PROVIDER_PRESETS = {
+    "openai": {
+        "name": "OpenAI",
+        "llm": {
+            "interface_format": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+            "default_model": "gpt-4o-mini",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 600
+        },
+        "embedding": {
+            "interface_format": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "models": ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
+            "default_model": "text-embedding-3-small",
+            "retrieval_k": 4
+        }
+    },
+    "openrouter": {
+        "name": "OpenRouter",
+        "llm": {
+            "interface_format": "openrouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "models": [
+                "anthropic/claude-3.5-sonnet",
+                "google/gemini-pro-1.5",
+                "openai/gpt-4o",
+                "meta-llama/llama-3.1-70b-instruct",
+                "mistralai/mistral-large"
+            ],
+            "default_model": "anthropic/claude-3.5-sonnet",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 600
+        },
+        "embedding": {
+            "interface_format": "openai",
+            "base_url": "https://openrouter.ai/api/v1",
+            "models": ["openai/text-embedding-3-small"],
+            "default_model": "openai/text-embedding-3-small",
+            "retrieval_k": 4
+        }
+    },
+    "azure": {
+        "name": "Azure OpenAI",
+        "llm": {
+            "interface_format": "azure",
+            "base_url": "https://YOUR-RESOURCE-NAME.openai.azure.com",
+            "models": ["gpt-4", "gpt-35-turbo"],
+            "default_model": "gpt-4",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 600
+        },
+        "embedding": {
+            "interface_format": "azure",
+            "base_url": "https://YOUR-RESOURCE-NAME.openai.azure.com",
+            "models": ["text-embedding-ada-002"],
+            "default_model": "text-embedding-ada-002",
+            "retrieval_k": 4
+        }
+    },
+    "gemini": {
+        "name": "Google Gemini",
+        "llm": {
+            "interface_format": "gemini",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta",
+            "models": ["gemini-1.5-pro", "gemini-1.5-flash"],
+            "default_model": "gemini-1.5-flash",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 600
+        },
+        "embedding": {
+            "interface_format": "gemini",
+            "base_url": "https://generativelanguage.googleapis.com/v1beta",
+            "models": ["text-embedding-004"],
+            "default_model": "text-embedding-004",
+            "retrieval_k": 4
+        }
+    },
+    "claude": {
+        "name": "Anthropic Claude",
+        "llm": {
+            "interface_format": "claude",
+            "base_url": "https://api.anthropic.com/v1",
+            "models": ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"],
+            "default_model": "claude-3-5-sonnet-20241022",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 600
+        },
+        "embedding": {
+            "interface_format": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "models": ["text-embedding-3-small"],
+            "default_model": "text-embedding-3-small",
+            "retrieval_k": 4,
+            "note": "Claude不提供embedding服务，建议使用OpenAI"
+        }
+    },
+    "deepseek": {
+        "name": "DeepSeek",
+        "llm": {
+            "interface_format": "openai",
+            "base_url": "https://api.deepseek.com/v1",
+            "models": ["deepseek-chat", "deepseek-coder"],
+            "default_model": "deepseek-chat",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 600
+        },
+        "embedding": {
+            "interface_format": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "models": ["text-embedding-3-small"],
+            "default_model": "text-embedding-3-small",
+            "retrieval_k": 4,
+            "note": "DeepSeek不提供embedding服务，建议使用OpenAI"
+        }
+    },
+    "moonshot": {
+        "name": "Moonshot (月之暗面)",
+        "llm": {
+            "interface_format": "openai",
+            "base_url": "https://api.moonshot.cn/v1",
+            "models": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+            "default_model": "moonshot-v1-8k",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 600
+        },
+        "embedding": {
+            "interface_format": "openai",
+            "base_url": "https://api.openai.com/v1",
+            "models": ["text-embedding-3-small"],
+            "default_model": "text-embedding-3-small",
+            "retrieval_k": 4,
+            "note": "Moonshot不提供embedding服务，建议使用OpenAI"
+        }
+    },
+    "zhipu": {
+        "name": "智谱AI (GLM)",
+        "llm": {
+            "interface_format": "openai",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4",
+            "models": ["glm-4", "glm-4-flash", "glm-3-turbo"],
+            "default_model": "glm-4-flash",
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "timeout": 600
+        },
+        "embedding": {
+            "interface_format": "openai",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4",
+            "models": ["embedding-2"],
+            "default_model": "embedding-2",
+            "retrieval_k": 4
+        }
+    }
+}
+
+
 def load_global_config() -> Dict[str, Any]:
     """
     加载全局配置文件
@@ -1333,6 +1499,27 @@ async def test_embedding_config(embedding_config: EmbeddingConfig):
             "success": False,
             "message": f"测试失败: {str(e)}"
         }
+
+
+@app.get("/api/v1/config/presets", tags=["配置"])
+async def get_model_presets():
+    """
+    获取模型提供商预设配置
+
+    返回所有支持的模型提供商的预设配置，包括：
+    - OpenAI
+    - OpenRouter
+    - Azure OpenAI
+    - Google Gemini
+    - Anthropic Claude
+    - DeepSeek
+    - Moonshot (月之暗面)
+    - 智谱AI (GLM)
+    """
+    return {
+        "presets": MODEL_PROVIDER_PRESETS,
+        "providers": list(MODEL_PROVIDER_PRESETS.keys())
+    }
 
 
 @app.post("/api/v1/knowledge/import", tags=["知识库"])

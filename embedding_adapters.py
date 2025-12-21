@@ -297,17 +297,30 @@ def create_embedding_adapter(
     工厂函数：根据 interface_format 返回不同的 embedding 适配器实例
     """
     fmt = interface_format.strip().lower()
-    if fmt == "openai":
+
+    # OpenAI 及 OpenAI 兼容接口
+    if fmt in ["openai", "openrouter", "deepseek", "claude", "moonshot", "zhipu", "阿里云百炼", "火山引擎"]:
         return OpenAIEmbeddingAdapter(api_key, base_url, model_name)
-    elif fmt == "azure openai":
+
+    # Azure OpenAI
+    elif fmt in ["azure openai", "azure"]:
         return AzureOpenAIEmbeddingAdapter(api_key, base_url, model_name)
+
+    # Ollama
     elif fmt == "ollama":
         return OllamaEmbeddingAdapter(model_name, base_url)
+
+    # ML Studio (LM Studio)
     elif fmt == "ml studio":
         return MLStudioEmbeddingAdapter(api_key, base_url, model_name)
+
+    # Google Gemini
     elif fmt == "gemini":
         return GeminiEmbeddingAdapter(api_key, model_name, base_url)
-    elif fmt == "siliconflow":
+
+    # 硅基流动 (SiliconFlow)
+    elif fmt in ["siliconflow", "硅基流动"]:
         return SiliconFlowEmbeddingAdapter(api_key, base_url, model_name)
+
     else:
         raise ValueError(f"Unknown embedding interface_format: {interface_format}")
