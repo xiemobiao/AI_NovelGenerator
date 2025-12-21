@@ -3,6 +3,7 @@
 
 import { create } from 'zustand';
 import type {
+  User,
   Project,
   NovelArchitecture,
   ChapterBlueprint,
@@ -14,6 +15,13 @@ import type {
 } from '@/types';
 
 interface AppState {
+  // ==================== 用户认证 ====================
+  currentUser: User | null;
+  token: string | null;
+  setUser: (user: User | null, token?: string | null) => void;
+  logout: () => void;
+  isAuthenticated: () => boolean;
+
   // ==================== 当前项目 ====================
   currentProject: Project | null;
   setCurrentProject: (project: Project | null) => void;
@@ -62,6 +70,10 @@ interface AppState {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
 
+  isDarkMode: boolean;
+  setIsDarkMode: (isDark: boolean) => void;
+  toggleTheme: () => void;
+
   // ==================== 通知 ====================
   notifications: Array<{
     id: string;
@@ -77,8 +89,10 @@ interface AppState {
   removeNotification: (id: string) => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   // ==================== 初始状态 ====================
+  currentUser: localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!) : null,
+  token: localStorage.getItem('token'),
   currentProject: null,
   architecture: null,
   blueprints: [],
@@ -90,9 +104,44 @@ export const useAppStore = create<AppState>((set) => ({
   config: null,
   loading: false,
   sidebarCollapsed: false,
+  isDarkMode: localStorage.getItem('theme') === 'dark',
   notifications: [],
 
   // ==================== Actions ====================
+  setUser: (user, token) => {
+    if (user && token) {
+      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem('token', token);
+      set({ currentUser: user, token });
+    } else {
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      set({ currentUser: null, token: null });
+    }
+  },
+
+  logout: () => {
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    set({
+      currentUser: null,
+      token: null,
+      currentProject: null,
+      architecture: null,
+      blueprints: [],
+      chapters: [],
+      currentChapter: null,
+      tasks: [],
+      plotlines: [],
+      qualityReport: null,
+    });
+  },
+
+  isAuthenticated: () => {
+    const state = get();
+    return !!(state.currentUser && state.token);
+  },
+
   setCurrentProject: (project) => set({ currentProject: project }),
 
   setArchitecture: (architecture) => set({ architecture }),
@@ -147,6 +196,18 @@ export const useAppStore = create<AppState>((set) => ({
   setLoading: (loading) => set({ loading }),
 
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+
+  setIsDarkMode: (isDark) => {
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    set({ isDarkMode: isDark });
+  },
+
+  toggleTheme: () =>
+    set((state) => {
+      const newTheme = !state.isDarkMode;
+      localStorage.setItem('theme', newTheme ? 'dark' : 'light');
+      return { isDarkMode: newTheme };
+    }),
 
   addNotification: (notification) =>
     set((state) => ({

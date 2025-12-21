@@ -1,6 +1,20 @@
 // types/index.ts
 // 核心类型定义
 
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  avatar?: string;
+  created_at: string;
+  role: 'user' | 'admin';
+}
+
+export interface AuthResponse {
+  user: User;
+  token: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -38,6 +52,16 @@ export interface Chapter {
   status: 'draft' | 'final';
   created_at: string;
   updated_at: string;
+}
+
+export interface ChapterVersion {
+  version_id: string;
+  chapter_number: number;
+  content: string;
+  word_count: number;
+  created_at: string;
+  created_by: string;
+  change_description?: string;
 }
 
 export interface GenerationTask {

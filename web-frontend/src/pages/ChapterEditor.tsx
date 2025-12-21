@@ -27,11 +27,13 @@ import {
   PlusOutlined,
   ReloadOutlined,
   FileTextOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import Editor from '@monaco-editor/react';
 import { useAppStore } from '@/store/useAppStore';
 import apiClient from '@/services/api';
-import type { Chapter } from '@/types';
+import type { Chapter, ChapterVersion } from '@/types';
+import VersionHistory from '@/components/VersionHistory';
 
 const { TextArea } = Input;
 
@@ -50,6 +52,7 @@ const ChapterEditor: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [editorContent, setEditorContent] = useState('');
   const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -216,6 +219,13 @@ const ChapterEditor: React.FC = () => {
     });
   };
 
+  const handleRestoreVersion = (version: ChapterVersion) => {
+    if (currentChapter) {
+      setEditorContent(version.content);
+      message.success('版本已恢复到编辑器，请保存以应用更改');
+    }
+  };
+
   const getChapterStatusTag = (status: Chapter['status']) => {
     return status === 'final' ? (
       <Tag color="success" icon={<CheckOutlined />}>
@@ -352,6 +362,12 @@ const ChapterEditor: React.FC = () => {
             extra={
               currentChapter && (
                 <Space>
+                  <Tooltip title="版本历史">
+                    <Button
+                      icon={<HistoryOutlined />}
+                      onClick={() => setShowVersionHistory(true)}
+                    />
+                  </Tooltip>
                   <Button
                     icon={<SaveOutlined />}
                     onClick={handleSaveChapter}
@@ -473,6 +489,16 @@ const ChapterEditor: React.FC = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 版本历史 */}
+      {currentChapter && (
+        <VersionHistory
+          visible={showVersionHistory}
+          chapterNumber={currentChapter.chapter_number}
+          onClose={() => setShowVersionHistory(false)}
+          onRestore={handleRestoreVersion}
+        />
+      )}
     </Spin>
   );
 };

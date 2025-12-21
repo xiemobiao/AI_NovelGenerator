@@ -5,8 +5,10 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider, theme, App as AntApp } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import { useAppStore } from '@/store/useAppStore';
 
 // 页面组件
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ArchitectureEditor from './pages/ArchitectureEditor';
 import BlueprintEditor from './pages/BlueprintEditor';
@@ -16,15 +18,18 @@ import Visualizations from './pages/Visualizations';
 import ExportPage from './pages/ExportPage';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
+import PrivateRoute from './components/PrivateRoute';
 
 import './App.css';
 
 const App: React.FC = () => {
+  const { isDarkMode } = useAppStore();
+
   return (
     <ConfigProvider
       locale={zhCN}
       theme={{
-        algorithm: theme.defaultAlgorithm,
+        algorithm: isDarkMode ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#1890ff',
           borderRadius: 6,
@@ -34,7 +39,15 @@ const App: React.FC = () => {
       <AntApp>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Layout />}>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/"
+              element={
+                <PrivateRoute>
+                  <Layout />
+                </PrivateRoute>
+              }
+            >
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="architecture" element={<ArchitectureEditor />} />
