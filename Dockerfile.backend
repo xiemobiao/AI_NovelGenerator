@@ -37,6 +37,9 @@ COPY websocket_manager.py .
 COPY websocket_routes.py .
 COPY logger_config.py .
 COPY export_manager.py .
+COPY celery_app.py .
+COPY prometheus_metrics.py .
+COPY sentry_config.py .
 
 # 创建必要的目录
 RUN mkdir -p /app/logs /app/data

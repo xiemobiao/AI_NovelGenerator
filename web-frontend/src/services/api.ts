@@ -3,7 +3,6 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import type {
-  Project,
   NovelArchitecture,
   ChapterBlueprint,
   Chapter,
@@ -154,7 +153,7 @@ class APIClient {
 
   async listTasks(): Promise<GenerationTask[]> {
     const response = await this.client.get('/tasks');
-    return response.data;
+    return response.data.tasks || [];
   }
 
   // ==================== 质量检查 ====================

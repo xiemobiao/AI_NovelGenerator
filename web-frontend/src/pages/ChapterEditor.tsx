@@ -21,7 +21,6 @@ import {
   Tooltip,
 } from 'antd';
 import {
-  EditOutlined,
   SaveOutlined,
   CheckOutlined,
   PlusOutlined,

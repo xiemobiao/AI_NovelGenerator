@@ -33,7 +33,7 @@ import {
 } from '@ant-design/icons';
 import { useAppStore } from '@/store/useAppStore';
 import apiClient from '@/services/api';
-import type { Plotline, QualityReport } from '@/types';
+import type { Plotline } from '@/types';
 
 const { TextArea } = Input;
 
@@ -54,7 +54,7 @@ const LongNovelManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
 
   // 卷册管理状态
-  const [volumes, setVolumes] = useState<Volume[]>([]);
+  const [volumes] = useState<Volume[]>([]);
   const [showVolumeModal, setShowVolumeModal] = useState(false);
   const [editingVolume, setEditingVolume] = useState<Volume | null>(null);
   const [volumeForm] = Form.useForm();
@@ -107,7 +107,7 @@ const LongNovelManager: React.FC = () => {
     setShowVolumeModal(true);
   };
 
-  const handleSaveVolume = async (values: any) => {
+  const handleSaveVolume = async (_values: any) => {
     try {
       // TODO: 实现保存API
       message.success(editingVolume ? '卷册更新成功' : '卷册创建成功');
@@ -149,7 +149,7 @@ const LongNovelManager: React.FC = () => {
     {
       title: '章节范围',
       key: 'range',
-      render: (_, record: Volume) => (
+      render: (_: unknown, record: Volume) => (
         <span>
           第{record.start_chapter}-{record.end_chapter}章
         </span>
@@ -165,7 +165,7 @@ const LongNovelManager: React.FC = () => {
       title: '操作',
       key: 'actions',
       width: 150,
-      render: (_, record: Volume) => (
+      render: (_: unknown, record: Volume) => (
         <Space>
           <Button
             type="link"
@@ -226,7 +226,7 @@ const LongNovelManager: React.FC = () => {
   };
 
   const getPlotlineStatusTag = (status: Plotline['status']) => {
-    const statusMap = {
+    const statusMap: Record<string, { color: string; text: string; icon?: React.ReactNode }> = {
       planned: { color: 'default', text: '计划中', icon: <ClockCircleOutlined /> },
       active: { color: 'processing', text: '进行中', icon: <ExclamationCircleOutlined /> },
       suspended: { color: 'warning', text: '已暂停', icon: <ClockCircleOutlined /> },
@@ -269,7 +269,7 @@ const LongNovelManager: React.FC = () => {
       title: '章节范围',
       key: 'range',
       width: 150,
-      render: (_, record: Plotline) => (
+      render: (_: unknown, record: Plotline) => (
         <span>
           第{record.start_chapter}-{record.expected_end_chapter}章
         </span>
@@ -286,7 +286,7 @@ const LongNovelManager: React.FC = () => {
       title: '操作',
       key: 'actions',
       width: 100,
-      render: (_, record: Plotline) => (
+      render: (_: unknown, record: Plotline) => (
         <Button
           type="link"
           size="small"

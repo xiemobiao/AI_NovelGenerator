@@ -22,7 +22,6 @@ import {
 } from 'antd';
 import {
   RocketOutlined,
-  SaveOutlined,
   EditOutlined,
   FileTextOutlined,
   ReloadOutlined,

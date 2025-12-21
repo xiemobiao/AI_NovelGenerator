@@ -23,7 +23,7 @@ const Visualizations: React.FC = () => {
 
     try {
       setLoading(true);
-      const response = await apiClient.generateVisualization(
+      await apiClient.generateVisualization(
         currentProject.filepath,
         type
       );

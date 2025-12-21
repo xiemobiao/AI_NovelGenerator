@@ -35,7 +35,7 @@ import type { Project } from '@/types';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { currentProject, setCurrentProject, tasks, setTasks, setLoading } = useAppStore();
+  const { setCurrentProject, tasks, setTasks, setLoading } = useAppStore();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
@@ -82,7 +82,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleCreateProject = async (values: any) => {
+  const handleCreateProject = async (_values: any) => {
     try {
       setLoading(true);
       message.success('项目创建成功！');
