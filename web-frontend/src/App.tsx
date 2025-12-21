@@ -13,6 +13,7 @@ import BlueprintEditor from './pages/BlueprintEditor';
 import ChapterEditor from './pages/ChapterEditor';
 import LongNovelManager from './pages/LongNovelManager';
 import Visualizations from './pages/Visualizations';
+import ExportPage from './pages/ExportPage';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
 
@@ -41,6 +42,7 @@ const App: React.FC = () => {
               <Route path="chapters" element={<ChapterEditor />} />
               <Route path="long-novel" element={<LongNovelManager />} />
               <Route path="visualizations" element={<Visualizations />} />
+              <Route path="export" element={<ExportPage />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>

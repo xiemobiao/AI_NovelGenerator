@@ -11,6 +11,7 @@ import {
   EditOutlined,
   BarChartOutlined,
   LineChartOutlined,
+  DownloadOutlined,
   SettingOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -57,6 +58,11 @@ const AppLayout: React.FC = () => {
       key: '/visualizations',
       icon: <LineChartOutlined />,
       label: '数据可视化',
+    },
+    {
+      key: '/export',
+      icon: <DownloadOutlined />,
+      label: '导出小说',
     },
     {
       key: '/settings',
