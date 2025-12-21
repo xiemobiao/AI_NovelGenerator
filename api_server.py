@@ -19,6 +19,12 @@ import os
 from logger_config import setup_logger, get_logger
 from export_manager import export_novel
 
+# 导入数据库和路由
+from database import init_db
+from auth_routes import router as auth_router
+from version_routes import router as version_router
+from websocket_routes import router as websocket_router
+
 # 设置日志
 logger = setup_logger("NovelAPI", log_dir="./logs")
 
@@ -39,6 +45,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 注册路由
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(version_router, prefix="/api/v1")
+app.include_router(websocket_router)
+
+# 应用启动事件
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时初始化数据库"""
+    logger.info("正在初始化数据库...")
+    init_db()
+    logger.info("数据库初始化完成")
 
 # 存储任务状态
 tasks_status: Dict[str, Dict[str, Any]] = {}

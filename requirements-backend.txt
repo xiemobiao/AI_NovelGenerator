@@ -1,0 +1,48 @@
+# AI Novel Generator - Backend Dependencies
+# 后端API依赖包
+
+# Web框架
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# 数据库
+sqlalchemy==2.0.23
+alembic==1.12.1
+
+# 认证和安全
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# WebSocket
+websockets==12.0
+
+# 数据验证
+pydantic==2.5.0
+pydantic[email]==2.5.0
+email-validator==2.1.0
+
+# HTTP客户端和工具
+httpx==0.25.1
+aiofiles==23.2.1
+
+# 现有依赖（已有的功能需要）
+openai>=1.0.0
+langchain>=0.1.0
+langchain-openai>=0.0.2
+langchain-community>=0.0.10
+chromadb>=0.4.18
+numpy>=1.24.0
+pandas>=2.0.0
+python-docx>=1.1.0
+ebooklib>=0.18
+reportlab>=4.0.7
+Pillow>=10.1.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+plotly>=5.18.0
+
+# 开发工具
+pytest==7.4.3
+pytest-asyncio==0.21.1
