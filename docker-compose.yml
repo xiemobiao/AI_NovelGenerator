@@ -25,6 +25,45 @@ services:
       - novel-network
     restart: unless-stopped
 
+  # Redis缓存
+  redis:
+    image: redis:7-alpine
+    container_name: novel-generator-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # RabbitMQ消息队列
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: novel-generator-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin_password}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - novel-network
+    restart: unless-stopped
+
   # 后端API服务
   backend:
     build:
@@ -34,6 +73,11 @@ services:
     environment:
       - DATABASE_URL=postgresql://${DB_USER:-novelgen}:${DB_PASSWORD:-change_this_password}@database:5432/${DB_NAME:-novel_generator}
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this-in-production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin_password}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/2
       - PYTHONUNBUFFERED=1
     volumes:
       - ./data:/app/data
@@ -43,12 +87,89 @@ services:
     depends_on:
       database:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/v1/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: novel-generator-celery-worker
+    command: celery -A celery_app worker --loglevel=info --concurrency=4
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-novelgen}:${DB_PASSWORD:-change_this_password}@database:5432/${DB_NAME:-novel_generator}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this-in-production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin_password}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - database
+      - redis
+      - rabbitmq
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Celery Beat (定时任务调度器)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: novel-generator-celery-beat
+    command: celery -A celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-novelgen}:${DB_PASSWORD:-change_this_password}@database:5432/${DB_NAME:-novel_generator}
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this-in-production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_password}
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin_password}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/2
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - database
+      - redis
+      - rabbitmq
+    networks:
+      - novel-network
+    restart: unless-stopped
+
+  # Flower (Celery监控)
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: novel-generator-flower
+    command: celery -A celery_app flower --port=5555
+    environment:
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin_password}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/2
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - rabbitmq
     networks:
       - novel-network
     restart: unless-stopped
@@ -80,4 +201,8 @@ networks:
 # 数据卷
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  rabbitmq_data:
     driver: local
